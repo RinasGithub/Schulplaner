@@ -1,0 +1,60 @@
+/* Schulplaner – Handy zuerst. Farben als Variablen, hell und dunkel. */
+:root {
+  --bg: #f4f5f7; --karte: #ffffff; --text: #1b1f24; --leise: #5b6470; --linie: #d9dde3;
+  --akzent: #1f3a5f; --akzent-text: #ffffff; --gut: #1e7a46; --warn: #a15c00; --feld: #ffffff; --chip: #e9ecf1;
+}
+:root[data-theme="dark"] {
+  --bg: #12151a; --karte: #1c2128; --text: #e8ebef; --leise: #a3acb8; --linie: #323a45;
+  --akzent: #8fb4e6; --akzent-text: #0f1722; --gut: #6fd49b; --warn: #f0b35a; --feld: #12151a; --chip: #2a313b;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #12151a; --karte: #1c2128; --text: #e8ebef; --leise: #a3acb8; --linie: #323a45;
+    --akzent: #8fb4e6; --akzent-text: #0f1722; --gut: #6fd49b; --warn: #f0b35a; --feld: #12151a; --chip: #2a313b;
+  }
+}
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; padding-bottom: 76px; }
+header { position: sticky; top: 0; z-index: 5; background: var(--akzent); color: var(--akzent-text); padding: 10px 16px; }
+header h1 { margin: 0; font-size: 18px; }
+header p { margin: 2px 0 0; font-size: 13px; opacity: .9; }
+main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; outline: none; }
+nav { position: fixed; bottom: 0; left: 0; right: 0; display: flex; background: var(--karte); border-top: 1px solid var(--linie); padding-bottom: env(safe-area-inset-bottom); z-index: 5; }
+nav button { flex: 1; min-height: 56px; border: 0; background: none; color: var(--leise); font: inherit; font-size: 13px; }
+nav button[aria-current="page"] { color: var(--akzent); font-weight: 700; box-shadow: inset 0 3px 0 var(--akzent); }
+
+h2 { font-size: 17px; margin: 18px 0 8px; }
+h3 { font-size: 15px; margin: 16px 0 6px; padding-bottom: 4px; border-bottom: 1px solid var(--linie); }
+p { margin: 6px 0; }
+.leise { color: var(--leise); font-size: 14px; }
+.karte { background: var(--karte); border: 1px solid var(--linie); border-radius: 12px; padding: 12px 14px; margin: 10px 0; }
+.karte.fach { border-left: 6px solid var(--farbe, var(--akzent)); }
+.karte.fertig { border-color: var(--gut); box-shadow: inset 0 0 0 1px var(--gut); }
+.karte.weg { opacity: .55; }
+.titel { font-weight: 700; }
+.meta { color: var(--leise); font-size: 13.5px; font-style: italic; }
+.fachname { display: inline-block; font-size: 12.5px; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; color: var(--farbe, var(--akzent)); }
+:root[data-theme="dark"] .fachname { filter: brightness(1.6); }
+.zeile { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chip, button.knopf, a.knopf { min-height: 44px; min-width: 44px; padding: 8px 12px; border-radius: 22px; border: 1px solid var(--linie); background: var(--chip); color: var(--text); font: inherit; font-size: 14.5px; text-decoration: none; display: inline-flex; align-items: center; justify-content: center; }
+.chip[aria-pressed="true"] { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); font-weight: 700; }
+button.knopf.haupt { background: var(--akzent); color: var(--akzent-text); border-color: var(--akzent); font-weight: 700; }
+button.knopf.voll { width: 100%; margin-top: 8px; }
+button.link { background: none; border: 0; color: var(--akzent); font: inherit; padding: 10px 0; min-height: 44px; text-align: left; }
+label { display: block; font-size: 14px; color: var(--leise); margin-top: 8px; }
+input[type="text"], input[type="number"], select, textarea { width: 100%; min-height: 44px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--linie); background: var(--feld); color: var(--text); font: inherit; }
+textarea { min-height: 72px; resize: vertical; }
+.zwei { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.drei { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.balken { height: 8px; border-radius: 4px; background: var(--chip); overflow: hidden; margin-top: 8px; }
+.balken span { display: block; height: 100%; background: var(--farbe, var(--akzent)); }
+.hinweis { border-left: 4px solid var(--warn); padding: 8px 12px; background: var(--karte); border-radius: 0 8px 8px 0; margin: 10px 0; font-size: 14.5px; }
+.liste { list-style: none; margin: 0; padding: 0; }
+.liste li { padding: 8px 0; border-bottom: 1px solid var(--linie); display: flex; gap: 10px; align-items: flex-start; }
+.liste li:last-child { border-bottom: 0; }
+.liste input[type="checkbox"], .radio input { width: 24px; height: 24px; margin: 2px 0 0; flex: none; }
+.radio { display: flex; gap: 10px; padding: 8px 0; align-items: flex-start; color: var(--text); font-size: 15px; margin: 0; }
+.weiter { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+@media (min-width: 900px) { body { font-size: 17px; } main { max-width: 860px; } }
