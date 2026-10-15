@@ -56,5 +56,22 @@ textarea { min-height: 72px; resize: vertical; }
 .liste li:last-child { border-bottom: 0; }
 .liste input[type="checkbox"], .radio input { width: 24px; height: 24px; margin: 2px 0 0; flex: none; }
 .radio { display: flex; gap: 10px; padding: 8px 0; align-items: flex-start; color: var(--text); font-size: 15px; margin: 0; }
+/* Stoffverteilung: lila = Vorschlag aus der Datenbank, verschoben = von Emil geändert */
+:root { --lila: #7030a0; }
+:root[data-theme="dark"] { --lila: #c9a2f0; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --lila: #c9a2f0; } }
+.lila { color: var(--lila); font-weight: 600; }
+.vorschlag, .geaendert { font-size: 12px; padding: 2px 8px; border-radius: 10px; border: 1px solid var(--lila); color: var(--lila); }
+.geaendert { border-color: var(--leise); color: var(--leise); }
+.beispiel { margin: 2px 0 6px; font-size: 12.5px; font-style: italic; color: var(--leise); }
+.stunde { display: flex; gap: 10px; padding: 6px 10px; margin: 6px 0; border-radius: 8px; font-size: 14px; color: var(--leise); border: 1px dashed var(--linie); }
+.stunde.dabei { background: var(--chip); border-style: solid; color: var(--text); }
+.stunde .zeit { flex: none; width: 92px; font-variant-numeric: tabular-nums; }
+a.knopf.oeffnen { gap: 6px; font-weight: 600; }
+.art { font-style: normal; white-space: nowrap; }
+.kopfzeile { margin-top: 0; justify-content: space-between; }
+details.verschieben { margin-top: 8px; }
+details.verschieben summary { color: var(--akzent); cursor: pointer; min-height: 32px; padding-top: 6px; font-size: 14.5px; }
+button.tagzeile { width: 100%; padding: 4px 0; }
 .weiter { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 @media (min-width: 900px) { body { font-size: 17px; } main { max-width: 860px; } }
