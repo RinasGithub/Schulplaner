@@ -1,7 +1,7 @@
 /* Schulplaner – Handy-App. Liest Wochenpakete (JSON aus der Datenbank), speichert alle Eintragungen
    nur auf diesem Gerät (localStorage) und gibt sie als Rückmeldung-Datei zurück. Kein Server. */
 "use strict";
-const APP_VERSION = "0.8.0";
+const APP_VERSION = "0.8.1";
 const SCHLUESSEL = "schulplaner";
 const TAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const ZEITEN = { B: "Bahnfahrt", F: "Vormittag", N: "Nachmittag", A: "Abend", W: "Wochenende" };
@@ -628,11 +628,20 @@ function seiteFach() {
 
 // gewählte Ursachen als Liste (frühere Version speicherte nur eine)
 const ursachen = (r) => (Array.isArray(r.ursache) ? r.ursache : r.ursache ? [r.ursache] : []);
+// Erinnerung zum Sichern: ab 7 Tagen ohne Sicherung (oder wenn noch nie gesichert wurde) als Kasten mit Knopf
+function sicherungsHinweis(immer) {
+  const t = Z.letzteSicherung, tage = t ? Math.round((datum(heuteIso()) - datum(t)) / 86400000) : null;
+  const wann = t ? (tage === 0 ? "heute" : tage === 1 ? "gestern" : `vor ${tage} Tagen`) : null;
+  if (t && tage < 7) return immer ? `<p class="leise">Letzte Sicherung: ${wann}.</p>` : "";
+  if (!Object.keys(Z.e).length) return "";
+  return `<div class="hinweis sichern">${t ? `Deine letzte Sicherung war ${wann}.` : "Du hast deine Daten noch nie gesichert."} Sichere sie jetzt. Dann geht nichts verloren, wenn das Handy kaputtgeht oder der Browser geleert wird.
+    <button class="knopf haupt voll" data-a="sichern">Jetzt sichern</button></div>`;
+}
 function seiteSonntag() {
   const p = paket();
   if (!p) return ohnePaket();
   const r = eintraege().retro;
-  return `<p class="leise">${p.Plan.Zielsatz ? "Mein Zielsatz: " + esc(p.Plan.Zielsatz) : "Dein Zielsatz steht noch nicht in der Datenbank."}</p>
+  return `${sicherungsHinweis(false)}<p class="leise">${p.Plan.Zielsatz ? "Mein Zielsatz: " + esc(p.Plan.Zielsatz) : "Dein Zielsatz steht noch nicht in der Datenbank."}</p>
     <h3>Vor der Woche</h3>
     <label>Mein größtes Hindernis diese Woche${feld("r-hindernis", r.hindernis || "", "", "")}</label>
     <label>Wenn …${feld("r-wenn", r.wenn || "", "wenn ich zum Handy greife", "")}</label>
@@ -678,7 +687,8 @@ function seiteMehr() {
     ${notizUebersicht()}
     ${gemeldeteLinks()}
     <h3>Daten</h3>
-    <p class="leise">Alles liegt nur auf diesem Gerät. Sichere es, bevor du den Browser leerst.</p>
+    <p class="leise">Alles liegt nur auf diesem Gerät. Sichere es, bevor du den Browser leerst. Die Sicherungsdatei kannst du an Mama oder Papa schicken oder in deinem Cloud-Ordner ablegen.</p>
+    ${sicherungsHinweis(true)}
     <div class="zeile"><button class="knopf" data-a="sichern">Alles sichern</button><button class="knopf" data-a="laden">Sicherung einlesen</button></div>
     <p class="leise">Schulplaner App ${APP_VERSION}</p>`;
 }
@@ -820,7 +830,9 @@ function handle(el, wert) {
     case "laden": document.getElementById("datei").click(); return;
     case "paket-weg": if (confirm(`Wochenpaket ${wert} und deine Eintragungen dazu von diesem Gerät entfernen?`)) { delete Z.pakete[wert]; delete Z.e[wert]; if (Z.woche === wert) Z.woche = Object.keys(Z.pakete).sort()[0] || null; } break;
     case "rueckmeldung": abgeben(`Schulplaner_Rueckmeldung_${Z.woche}.json`, rueckmeldung()); return;
-    case "sichern": abgeben(`Schulplaner_Sicherung_${heuteIso()}.json`, { Art: "Sicherung", Stand: Z }); return;
+    case "sichern":                                         // erst nach erfolgreichem Speichern oder Teilen als gesichert merken
+      abgeben(`Schulplaner_Sicherung_${heuteIso()}.json`, { Art: "Sicherung", Stand: Z }).then((ok) => { if (ok) { Z.letzteSicherung = heuteIso(); speichern(); zeichnen(true); } });
+      return;
     default:
       if (a && a.startsWith("r-")) { eintraege().retro[a.slice(2)] = wert; neu = false; } else return;
   }
@@ -884,10 +896,11 @@ function rueckmeldung() {
 async function abgeben(name, obj) {
   const inhalt = JSON.stringify(obj, null, 1), datei = new File([inhalt], name, { type: "application/json" });
   if (navigator.canShare && navigator.canShare({ files: [datei] })) {
-    try { await navigator.share({ files: [datei], title: name }); return; } catch (e) { if (e.name === "AbortError") return; }
+    try { await navigator.share({ files: [datei], title: name }); return true; } catch (e) { if (e.name === "AbortError") return false; }
   }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(datei); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  return true;
 }
 
 // ---------------------------------------------------------------- Start

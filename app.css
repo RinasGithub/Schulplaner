@@ -152,3 +152,4 @@ details.offen summary { cursor: pointer; }
 .ikon.an { background: #d64535; color: #fff; border-color: #d64535; }
 .filter { margin-bottom: 6px; grid-template-columns: 1fr 1fr; }
 .aufklapp input[type="time"] { width: 100%; min-height: 44px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--linie); background: var(--feld); color: var(--text); font: inherit; }
+.hinweis.sichern { border-left-color: var(--akzent); }
