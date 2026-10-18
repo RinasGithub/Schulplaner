@@ -1,20 +1,23 @@
 /* Schulplaner – Handy-App. Liest Wochenpakete (JSON aus der Datenbank), speichert alle Eintragungen
    nur auf diesem Gerät (localStorage) und gibt sie als Rückmeldung-Datei zurück. Kein Server. */
 "use strict";
-const APP_VERSION = "0.5.0";
+const APP_VERSION = "0.6.0";
 const SCHLUESSEL = "schulplaner";
 const TAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const ZEITEN = { B: "Bahnfahrt", F: "Vormittag", N: "Nachmittag", A: "Abend", W: "Wochenende" };
 const STAND = ["–", "¼", "½", "¾", "✓"];
 const UEBEN_IDEEN = ["Aufgaben im Buch", "Online-Übung", "Karteikarten", "Selbsttest (abdecken)", "aus dem Kopf aufschreiben oder zeichnen", "mit Lösung vergleichen"];
 const URSACHEN = ["Methode", "Menge", "Zeitpunkt", "Ort", "Fokus", "Sonstiges"];
+const TAG_LANG = { Mo: "Montag", Di: "Dienstag", Mi: "Mittwoch", Do: "Donnerstag", Fr: "Freitag", Sa: "Samstag", So: "Sonntag" };
+// Wie sitzt es? Leer = noch nicht eingeschätzt (Sanduhr). Die Werte gehen so in die Datenbank (tblWegMaterial.Einschaetzung).
+const SITZT = [["", "noch nicht eingeschätzt"], ["sitzt", "sitzt"], ["unsicher", "unsicher"], ["nicht verstanden", "nicht verstanden"]];
 // Beispiele zum Üben, klein unter der Übungszeit: in der Bahn nur Leichtes
 const UEBEN_BAHN = "zum Beispiel Karteikarten, Vokabeln, ein Video ansehen, etwas Kurzes lesen";
 const UEBEN_TISCH = "zum Beispiel Aufgaben im Buch, Online-Übung, Karteikarten, Selbsttest, aus dem Kopf aufschreiben";
 
 // ---------------------------------------------------------------- Zustand
 let Z = laden();
-let ansicht = { seite: "heute", fach: null };
+let ansicht = { seite: "heute", fach: null };   // dazu kurz offen: leiste (Auswahl unter dem Titel), notiz, tipp
 
 function laden() {
   let z = null;
@@ -94,7 +97,6 @@ function medium(a) {
   if (/übung|interaktiv|geogebra|applet|quiz|exercise|training/i.test(t)) return { symbol: "✏️", art: "Online-Übung", knopf: "Online üben" };
   return { symbol: "🌐", art: "Online-Text", knopf: "Online lesen" };
 }
-const oeffnenKnopf = (a) => { const m = medium(a); return a.URL ? `<a class="knopf oeffnen" href="${esc(a.URL)}" target="_blank" rel="noopener"><span aria-hidden="true">${m.symbol}</span> ${m.knopf}</a>` : ""; };
 const artZeichen = (a) => `<span class="art" title="${medium(a).art}"><span aria-hidden="true">${medium(a).symbol}</span> ${medium(a).art}</span>`;
 // Symbol vor dem Zeitfenster: Bahn, Schule, Termin
 const ortZeichen = (fenster) => (/Bahn/.test(fenster) ? "🚆" : /^\d\d:\d\d-\d\d:\d\d$/.test(fenster) ? "🏫" : "📍");
@@ -105,6 +107,84 @@ function fortschritt(f) {                               // Anteil der Pflichtauf
   if (!liste.length) return { fertig: 0, anzahl: 0, anteil: 0 };
   const summe = liste.reduce((s, a) => s + (eMat(a.MaterialID).stand || 0) / 4, 0);
   return { fertig: liste.filter((a) => eMat(a.MaterialID).stand === 4).length, anzahl: liste.length, anteil: summe / liste.length };
+}
+
+// ---------------------------------------------------------------- Symbole (SVG, wie im Mock-up)
+const svg = (inhalt, gross = 24) => `<svg viewBox="0 0 24 24" width="${gross}" height="${gross}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${inhalt}</svg>`;
+const IKON = {
+  welt: '<circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3.2 3.6 3.2 14.4 0 18M12 3c-3.2 3.6-3.2 14.4 0 18"/>',
+  film: '<rect x="3" y="6" width="18" height="14" rx="2"/><path d="M3 10h18M6 6l2 4M11 6l2 4M16 6l2 4"/>',
+  hoeren: '<path d="M4 16v-4a8 8 0 0 1 16 0v4"/><rect x="3" y="14" width="4" height="7" rx="1.5"/><rect x="17" y="14" width="4" height="7" rx="1.5"/>',
+  pdf: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4M9 13h6M9 17h4"/>',
+  uebung: '<path d="M4 20h4L19 9l-4-4L4 16z"/><path d="M13.5 6.5l4 4"/>',
+  notiz: '<path d="M15 9V4H5v16h6"/><path d="M8 8h4M8 12h3"/><path d="M13 21l.8-3 5.4-5.4 2.2 2.2-5.4 5.4z"/>',
+  birne: '<path d="M9 18h6M10 21h4"/><path d="M12 3a6 6 0 0 0-3.8 10.6c.6.6.8 1.4.8 2.4h6c0-1 .2-1.8.8-2.4A6 6 0 0 0 12 3z"/>',
+  mond: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
+  sonne: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M5 19l1.4-1.4M17.6 6.4L19 5"/>',
+  sanduhr: '<path d="M6 3h12M6 21h12M7.5 3c0 5 4.5 6 4.5 9s-4.5 4-4.5 9M16.5 3c0 5-4.5 6-4.5 9s4.5 4 4.5 9"/>',
+};
+const ikon = (name, gross) => svg(IKON[name], gross);
+// Fortschritt als grüner Kreis: leer, ¼, ½, ¾ oder voll
+function torte(stand, gross = 30) {
+  const r = 9.5, c = 12, w = (stand || 0) / 4 * 2 * Math.PI;
+  const x = (c + r * Math.sin(w)).toFixed(2), y = (c - r * Math.cos(w)).toFixed(2);
+  const fuell = stand >= 4 ? `<circle cx="12" cy="12" r="${r}" fill="var(--gut)"/>` : stand > 0 ? `<path d="M12 12V${c - r}A${r} ${r} 0 ${stand > 2 ? 1 : 0} 1 ${x} ${y}z" fill="var(--gut)"/>` : "";
+  return `<svg viewBox="0 0 24 24" width="${gross}" height="${gross}" aria-hidden="true"><circle cx="12" cy="12" r="${r}" fill="none" stroke="var(--gut)" stroke-width="2"/>${fuell}</svg>`;
+}
+// Wie sitzt es? graue Sanduhr, grüner Haken, gelbes Dreieck mit !, rotes Dreieck mit ?
+function sitztZeichen(wert, gross = 30) {
+  if (wert === "sitzt") return `<span class="gruen">${svg('<path d="M4.5 12.5l5 5L19.5 7" stroke-width="3"/>', gross)}</span>`;
+  const dreieck = (fuell, rand, zeichen, farbe) => `<svg viewBox="0 0 24 24" width="${gross}" height="${gross}" aria-hidden="true"><path d="M12 2.8L22 20.5H2z" fill="${fuell}" stroke="${rand}" stroke-width="1.4" stroke-linejoin="round"/><text x="12" y="18.2" text-anchor="middle" font-size="11" font-weight="700" font-family="system-ui,sans-serif" fill="${farbe}">${zeichen}</text></svg>`;
+  if (wert === "unsicher") return dreieck("#f2c230", "#8a6d00", "!", "#1b1f24");
+  if (wert === "nicht verstanden") return dreieck("#d64535", "#8f1f14", "?", "#ffffff");
+  return `<span class="grau">${ikon("sanduhr", gross)}</span>`;
+}
+const STAND_TEXT = ["noch nicht angefangen", "ein Viertel geschafft", "die Hälfte geschafft", "drei Viertel geschafft", "fertig"];
+const standWerte = STAND_TEXT.map((t, i) => [i, t]);
+// Status rechts neben dem Titel. Ein Tipp öffnet darunter die Leiste mit allen Werten, ein Tipp auf einen Wert wählt ihn und schließt sie.
+const statusKnopf = (schluessel, inhalt, text) => `<button class="status" data-a="auf" data-w="${schluessel}" aria-expanded="${ansicht.leiste === schluessel}" aria-label="${esc(text)} (ändern)">${inhalt}</button>`;
+function leiste(schluessel, aktion, werte, aktiv, zeichen, id) {
+  if (ansicht.leiste !== schluessel) return "";
+  return `<div class="leiste" role="group">` + werte.map(([w, t]) => `<button data-a="${aktion}" data-w="${esc(w)}" ${id} aria-pressed="${String(aktiv ?? "") === String(w)}" aria-label="${esc(t)}">${zeichen(w)}</button>`).join("") + `</div>`;
+}
+// Kopf einer Karte: Titel links, Fortschritt und (nur bei Aufgaben) Wie sitzt es? rechts, darunter die offene Leiste
+function kartenKopf(titel, standAktion, stand, id, sitzt) {
+  const k = id.replace(/\D/g, ""), sS = `${standAktion}:${k}`, sZ = `sitzt:${k}`;
+  return `<div class="kartenkopf"><div class="kopftext">${titel}</div><div class="statusse">
+      ${statusKnopf(sS, torte(stand), "Wie weit: " + STAND_TEXT[stand || 0])}
+      ${sitzt !== undefined ? statusKnopf(sZ, sitztZeichen(sitzt), "Wie sitzt es: " + (sitzt || "noch nicht eingeschätzt")) : ""}</div></div>
+    ${leiste(sS, standAktion, standWerte, stand || 0, (w) => torte(Number(w), 34), id)}
+    ${sitzt !== undefined ? leiste(sZ, "sitzt", SITZT, sitzt || "", (w) => sitztZeichen(w, 30), id) : ""}`;
+}
+// Wann eine Zeile der Stoffverteilung ist, in Worten: "Mittwoch Bahnfahrt", "Dienstag Freiarbeit / Vormittag, 09:50"
+function eingeplantText(v) {
+  const tag = vtTag(v), fenster = vtFenster(v) || "", lang = TAG_LANG[tag] || tag;
+  if (/Bahn/.test(fenster)) return lang + " Bahnfahrt";
+  const h = Number(fenster.slice(0, 2));
+  const teil = tag === "Sa" || tag === "So" ? "Wochenende" : h < 13 ? "Freiarbeit / Vormittag" : h < 18 ? "Nachmittag" : "Abend";
+  return `${lang} ${teil}${/^\d\d:\d\d/.test(fenster) ? ", " + fenster.slice(0, 5) : ""}`;
+}
+// Eingeplant: aus der Stoffverteilung (lila = Vorschlag), sonst selbst gewählt; fehlt beides, rote Auswahlfelder Tag und Zeitraum
+function planZeile(a, m, id) {
+  const vs = verteilung().filter((v) => v.MaterialID === a.MaterialID).sort(sortVt);
+  if (vs.length) return `<p class="eingeplant">Eingeplant: ` + vs.map((v) => `<span class="${istVorschlag(v) ? "lila" : ""}">${esc(eingeplantText(v))}</span>`).join(", ") + `</p>`;
+  const felder = `<div class="zwei">${auswahl("tag", tagOptionen, m.tag, "Tag", id + (m.tag ? "" : ' class="rot"'))}${auswahl("zeit", zeitOptionen, m.zeit, "Zeitraum", id + (m.zeit ? "" : ' class="rot"'))}</div>`;
+  if (m.tag && m.zeit) return `<p class="eingeplant">Eingeplant: ${esc(TAG_LANG[m.tag] + " " + ZEITEN[m.zeit])}</p><details class="verschieben"><summary>ändern</summary>${felder}</details>`;
+  return `<div class="planen">${felder}</div>`;
+}
+// Symbol-Leiste unten: Link öffnen (Symbol je nach Art), Notiz (mit Punkt, wenn eine da ist), Glühbirne (Lerntechnik)
+const LINK_IKON = { Video: "film", "Hören": "hoeren", PDF: "pdf", "Online-Übung": "uebung", "Online-Text": "welt" };
+function ikonLeiste(a, m, id, mitWeg) {
+  const md = medium(a), tech = a.Techniken || [];
+  let h = `<div class="ikonleiste">`;
+  if (a.URL) h += `<a class="ikon" href="${esc(a.URL)}" target="_blank" rel="noopener" aria-label="${esc(md.knopf)}" title="${esc(md.knopf)}">${ikon(LINK_IKON[md.art] || "welt")}</a>`;
+  h += `<button class="ikon ${m.notiz ? "hat" : ""}" data-a="notiz-auf" data-w="${a.MaterialID}" aria-expanded="${ansicht.notiz === a.MaterialID}" aria-label="Notiz${m.notiz ? " (vorhanden)" : ""}" title="Notiz">${ikon("notiz")}</button>`;
+  if (tech.length) h += `<button class="ikon" data-a="tipp-auf" data-w="${a.MaterialID}" aria-expanded="${ansicht.tipp === a.MaterialID}" aria-label="Lerntechnik" title="Lerntechnik">${ikon("birne")}</button>`;
+  if (mitWeg) h += `<button class="chip klein rechts" data-a="weg" ${id} aria-pressed="${!!m.weg}">lasse ich weg</button>`;
+  h += `</div>`;
+  if (ansicht.notiz === a.MaterialID) h += `<div class="aufklapp">${text("m-notiz", m.notiz || "", "Notiz zu dieser Aufgabe: Fragen, Schwieriges, Ideen", id)}</div>`;
+  if (ansicht.tipp === a.MaterialID) h += `<div class="aufklapp">` + tech.map((t) => `<p><strong>${esc(t.Technik)}</strong><br>${esc(t.KurzErklaert || "")}</p>${t.SoGehts ? `<details><summary>So geht's</summary><p class="sogehts">${esc(t.SoGehts)}</p></details>` : ""}`).join("") + `</div>`;
+  return h;
 }
 
 // ---------------------------------------------------------------- Bausteine
@@ -119,26 +199,15 @@ const text = (aktion, wert, platz, extra = "") => `<textarea data-a="${aktion}" 
 const tagOptionen = TAGE.map((t) => [t, t]);
 const zeitOptionen = Object.entries(ZEITEN);
 
-// Wann eine Aufgabe laut Stoffverteilung dran ist (lila = Vorschlag)
-function wannZeile(materialID) {
-  const vs = verteilung().filter((v) => v.MaterialID === materialID).sort(sortVt);
-  if (!vs.length) return "";
-  return `<p class="leise">Wann: ` + vs.map((v) => `<span class="${istVorschlag(v) ? "lila" : ""}">${esc(wannText(v))}</span>`).join(", ") + `</p>`;
-}
 function aufgabeKarte(f, a, mitFach) {
   const m = eMat(a.MaterialID), id = `data-id="${a.MaterialID}"`;
   const meta = [kurzQuelle(a.Quelle), a.Fundstelle, a.Minuten ? a.Minuten + " Min." : "bei Bedarf"].filter(Boolean).join(" · ");
   return `<div class="karte ${m.stand === 4 ? "fertig" : ""} ${m.weg ? "weg" : ""}" style="--farbe:${esc(f.Farbe)}">
-    ${mitFach ? `<span class="fachname">${esc(f.Fach)}</span>` : ""}
-    <div class="titel">${esc(a.Titel)}</div>
-    <div class="meta">${artZeichen(a)} · ${esc(meta)}</div>
+    ${mitFach ? `<span class="fachname"><i class="punkt"></i>${esc(f.Fach)}</span>` : ""}
+    ${kartenKopf(`<div class="titel">${esc(a.Titel)}</div><div class="meta">${artZeichen(a)} · ${esc(meta)}</div>`, "stand", m.stand || 0, id, m.sitzt || "")}
     <p>${esc(a.Anweisung)}</p>
-    ${m.weg ? `<p class="leise">Lasse ich weg.</p>` : `<div class="zeile"><span class="leise">Wie weit?</span>${chips("stand", STAND, m.stand || 0, id)}</div>
-    ${wannZeile(a.MaterialID) || `<div class="zwei" style="margin-top:8px">${auswahl("tag", tagOptionen, m.tag, "Tag", id)}${auswahl("zeit", zeitOptionen, m.zeit, "Zeitraum", id)}</div>`}`}
-    <div class="zeile">
-      ${oeffnenKnopf(a)}
-      <button class="chip" data-a="weg" ${id} aria-pressed="${!!m.weg}">lasse ich weg</button>
-    </div>
+    ${m.weg ? `<p class="leise">Lasse ich weg.</p>` : planZeile(a, m, id)}
+    ${ikonLeiste(a, m, id, true)}
   </div>`;
 }
 
@@ -153,14 +222,14 @@ function vtKarte(v) {
     const m = eMat(a.MaterialID), id = `data-id="${a.MaterialID}"`;
     const meta = [kurzQuelle(a.Quelle), a.Fundstelle, a.Minuten ? "insgesamt " + a.Minuten + " Min." : ""].filter(Boolean).join(" · ");
     return `<div class="karte fach ${m.stand === 4 ? "fertig" : ""} ${m.weg ? "weg" : ""}" style="--farbe:${esc(f.Farbe)}">${kopf}
-      <div class="titel">${esc(a.Titel)}</div><div class="meta">${artZeichen(a)} · ${esc(meta)}</div><p>${esc(a.Anweisung)}</p>
-      ${m.weg ? `<p class="leise">Lasse ich weg.</p>` : `<div class="zeile"><span class="leise">Wie weit?</span>${chips("stand", STAND, m.stand || 0, id)}</div>`}
-      ${a.URL ? `<div class="zeile">${oeffnenKnopf(a)}</div>` : ""}${verschieben(v)}</div>`;
+      ${kartenKopf(`<div class="titel">${esc(a.Titel)}</div><div class="meta">${artZeichen(a)} · ${esc(meta)}</div>`, "stand", m.stand || 0, id, m.sitzt || "")}
+      <p>${esc(a.Anweisung)}</p>${m.weg ? `<p class="leise">Lasse ich weg.</p>` : ""}
+      ${ikonLeiste(a, m, id, false)}${verschieben(v)}</div>`;
   }
   const o = eVt(v.VerteilungID), x = `data-id="${v.VerteilungID}"`;
   return `<div class="karte fach ${o.stand === 4 ? "fertig" : ""}" style="--farbe:${esc(f.Farbe)}">${kopf}
-    ${v.Art === "Üben" ? `<p class="beispiel">${/Bahn/.test(vtFenster(v)) ? UEBEN_BAHN : UEBEN_TISCH}</p>` + feld("vt-was", o.was || "", "Was übe ich? (Seite, Aufgaben)", x) : `<div class="titel">${v.Art === "Zeigen" ? '<span aria-hidden="true">🎤</span> ' : ""}${esc(v.Beschreibung || v.Art)}</div>`}
-    <div class="zeile"><span class="leise">${v.Art === "Zeigen" ? "Erledigt?" : "Wie weit?"}</span>${chips("vt-stand", STAND, o.stand || 0, x)}</div>${verschieben(v)}</div>`;
+    ${kartenKopf(v.Art === "Üben" ? `<p class="beispiel">${/Bahn/.test(vtFenster(v)) ? UEBEN_BAHN : UEBEN_TISCH}</p>` : `<div class="titel">${v.Art === "Zeigen" ? '<span aria-hidden="true">🎤</span> ' : ""}${esc(v.Beschreibung || v.Art)}</div>`, "vt-stand", o.stand || 0, x)}
+    ${v.Art === "Üben" ? feld("vt-was", o.was || "", "Was übe ich? (Seite, Aufgaben)", x) : ""}${verschieben(v)}</div>`;
 }
 // Ein Tag: Termine, dann die Stoffverteilung nach Zeitfenstern
 function seiteTag(tag, istHeute) {
@@ -232,7 +301,7 @@ function seiteWoche() {
     h += `<h2>Nach Tagen</h2><div class="karte"><ul class="liste">` + TAGE.map((t) => {
       const vs = verteilung().filter((v) => vtTag(v) === t), min = vs.reduce((s, v) => s + (v.Minuten || 0), 0);
       const fae = [...new Set(vs.map((v) => v.FachID))].join(", ");
-      return vs.length ? `<li><button class="link tagzeile" data-a="tag" data-w="${t}"><strong>${t}</strong> · ${vs.length} Einträge · ${Math.round(min / 6) / 10} Std.<br><span class="leise">${esc(fae)}</span></button></li>` : "";
+      return vs.length ? `<li><button class="link tagzeile" data-a="tagansicht" data-w="${t}"><strong>${t}</strong> · ${vs.length} Einträge · ${Math.round(min / 6) / 10} Std.<br><span class="leise">${esc(fae)}</span></button></li>` : "";
     }).join("") + `</ul></div><h2>Nach Fächern</h2>`;
   }
   const freiwillig = p.Faecher.filter((f) => f.Optional);
@@ -355,7 +424,17 @@ function seiteMehr() {
     <h3>Darstellung</h3>${chips("theme", [["system", "wie das Gerät"], ["light", "hell"], ["dark", "dunkel"]], thema)}
     <h3>So liest du den Plan</h3>
     <p class="leise">Fest sind nur Ziel und Zeig-Termin. Den Weg dahin wählst du. Grün wird ein Thema erst nach einem Test, nicht nach Gefühl.</p>
-    <p class="leise">– ¼ ½ ¾ ✓ zeigt, wie weit du bist. Zeiträume: ${Object.values(ZEITEN).join(", ")}.</p>
+    <p class="leise">Zeiträume: ${Object.values(ZEITEN).join(", ")}.</p>
+    <h3>Die Symbole</h3>
+    <ul class="liste symbole">
+      <li>${torte(0, 26)}${torte(2, 26)}${torte(4, 26)}<span><strong>Wie weit?</strong> Leer, ¼, ½, ¾ oder voll. Voll heißt fertig. Antippen zum Ändern.</span></li>
+      <li>${sitztZeichen("", 26)}${sitztZeichen("sitzt", 26)}<span><strong>Wie sitzt es?</strong> Sanduhr: noch nicht eingeschätzt. Haken: sitzt.</span></li>
+      <li>${sitztZeichen("unsicher", 26)}${sitztZeichen("nicht verstanden", 26)}<span>Gelb: unsicher. Rot: nicht verstanden. Dann frag nach.</span></li>
+      <li>${ikon("welt", 26)}${ikon("film", 26)}<span><strong>Öffnen:</strong> Webseite, Video, Hören, PDF oder Online-Übung.</span></li>
+      <li>${ikon("notiz", 26)}<span><strong>Notiz</strong> zu dieser Aufgabe. Ein Punkt zeigt, dass schon eine da ist.</span></li>
+      <li>${ikon("birne", 26)}<span><strong>Lerntechnik:</strong> wie du diese Aufgabe gut lernen kannst.</span></li>
+      <li>${ikon("mond", 26)}<span>Oben rechts: hell oder dunkel.</span></li>
+    </ul>
     <h3>Daten</h3>
     <p class="leise">Alles liegt nur auf diesem Gerät. Sichere es, bevor du den Browser leerst.</p>
     <div class="zeile"><button class="knopf" data-a="sichern">Alles sichern</button><button class="knopf" data-a="laden">Sicherung einlesen</button></div>
@@ -365,13 +444,14 @@ function seiteMehr() {
 const ohnePaket = () => `<div class="karte"><div class="titel">Noch kein Wochenpaket</div><p>Lade die Datei für deine Woche. Du bekommst sie am Sonntag aus der Datenbank.</p><button class="knopf haupt voll" data-a="laden">Wochenpaket laden</button></div>`;
 
 // ---------------------------------------------------------------- Zeichnen
+const istDunkel = () => Z.theme === "dark" || (Z.theme !== "light" && !!window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
 const seiteTagAnsicht = () => (paket() ? `<button class="link" data-a="seite" data-w="woche">‹ Zur Woche</button>` + seiteTag(ansicht.tag, ansicht.tag === heuteTag()) : ohnePaket());
 const SEITEN = { heute: ["Heute", seiteHeute], woche: ["Woche", seiteWoche], sonntag: ["Sonntag", seiteSonntag], mehr: ["Mehr", seiteMehr], fach: ["Fach", seiteFach], tag: ["Tag", seiteTagAnsicht] };
 function zeichnen(obenBleiben) {
   const y = window.scrollY, p = paket();
   document.documentElement.dataset.theme = Z.theme && Z.theme !== "system" ? Z.theme : "";
   if (!document.documentElement.dataset.theme) delete document.documentElement.dataset.theme;
-  document.getElementById("kopf").innerHTML = `<h1>${ansicht.seite === "fach" ? esc(ansicht.fach) : ansicht.seite === "tag" ? esc(tagDatum(ansicht.tag)) : SEITEN[ansicht.seite][0]}</h1><p>${p ? `${esc(p.Plan.Lernende)} · ${esc(p.Woche.WocheID)} · ${kurzDatum(p.Woche.StartDatum)} bis ${kurzDatum(p.Woche.EndDatum)}${p.Umgebung !== "Produktion" ? " · " + esc(p.Umgebung.toUpperCase()) : ""}` : "Schulplaner"}</p>`;
+  document.getElementById("kopf").innerHTML = `<button class="thema" data-a="theme-wechsel" aria-label="${istDunkel() ? "Hell" : "Dunkel"} darstellen">${ikon(istDunkel() ? "sonne" : "mond", 22)}</button><h1>${ansicht.seite === "fach" ? esc(ansicht.fach) : ansicht.seite === "tag" ? esc(tagDatum(ansicht.tag)) : SEITEN[ansicht.seite][0]}</h1><p>${p ? `${esc(p.Plan.Lernende)} · ${esc(p.Woche.WocheID)} · ${kurzDatum(p.Woche.StartDatum)} bis ${kurzDatum(p.Woche.EndDatum)}${p.Umgebung !== "Produktion" ? " · " + esc(p.Umgebung.toUpperCase()) : ""}` : "Schulplaner"}</p>`;
   document.getElementById("inhalt").innerHTML = SEITEN[ansicht.seite][1]();
   document.getElementById("nav").innerHTML = ["heute", "woche", "sonntag", "mehr"].map((s) => `<button data-a="seite" data-w="${s}" ${ansicht.seite === s || (s === "woche" && (ansicht.seite === "fach" || ansicht.seite === "tag")) ? 'aria-current="page"' : ""}>${SEITEN[s][0]}</button>`).join("");
   window.scrollTo(0, obenBleiben ? y : 0);
@@ -385,14 +465,20 @@ function handle(el, wert) {
   switch (a) {
     case "seite": ansicht = { seite: wert, fach: null }; zeichnen(false); return;
     case "fach": ansicht = { seite: "fach", fach: wert }; zeichnen(false); return;
-    case "tag": ansicht = { seite: "tag", fach: null, tag: wert }; zeichnen(false); return;
+    case "tagansicht": ansicht = { seite: "tag", fach: null, tag: wert }; zeichnen(false); return;
     case "vt-tag": eVt(d.id).tag = wert || null; break;
     case "vt-fenster": eVt(d.id).fenster = wert || null; break;
     case "vt-zurueck": delete eVt(d.id).tag; delete eVt(d.id).fenster; break;
-    case "vt-stand": eVt(d.id).stand = Number(wert); break;
+    case "vt-stand": eVt(d.id).stand = Number(wert); ansicht.leiste = null; break;
+    case "auf": ansicht.leiste = ansicht.leiste === wert ? null : wert; zeichnen(true); return;
+    case "notiz-auf": ansicht.notiz = ansicht.notiz === Number(wert) ? null : Number(wert); zeichnen(true); return;
+    case "tipp-auf": ansicht.tipp = ansicht.tipp === Number(wert) ? null : Number(wert); zeichnen(true); return;
+    case "sitzt": eMat(d.id).sitzt = wert || null; ansicht.leiste = null; break;
+    case "m-notiz": eMat(d.id).notiz = wert; neu = false; break;
+    case "theme-wechsel": Z.theme = istDunkel() ? "light" : "dark"; break;
     case "vt-was": eVt(d.id).was = wert; neu = false; break;
     case "woche": if (wert) Z.woche = wert; break;
-    case "stand": eMat(d.id).stand = Number(wert); break;
+    case "stand": eMat(d.id).stand = Number(wert); ansicht.leiste = null; break;
     case "tag": eMat(d.id).tag = wert || null; break;
     case "zeit": eMat(d.id).zeit = wert || null; break;
     case "weg": eMat(d.id).weg = !eMat(d.id).weg; break;
@@ -449,8 +535,9 @@ function rueckmeldung() {
   const p = paket(), e = eintraege();
   return {
     Art: "Rueckmeldung", AppVersion: APP_VERSION, Erstellt: new Date().toISOString(), PlanID: p.Plan.PlanID, Lernende: p.Plan.Lernende, Woche: p.Woche.WocheID,
-    Material: p.Faecher.flatMap((f) => f.Aufgaben.map((a) => ({ a, m: e.mat[a.MaterialID], frei: (e.fach[f.Fach] || {}).frei })).filter((x) => (x.m && (x.m.stand || x.m.tag || x.m.weg)) || (x.frei && x.frei[x.a.MaterialID])).map((x) => ({
-      MaterialID: x.a.MaterialID, FortschrittProzent: x.frei && x.frei[x.a.MaterialID] ? 100 : ((x.m && x.m.stand) || 0) * 25, Tag: (x.m && x.m.tag) || null, Zeitraum: (x.m && ZEITEN[x.m.zeit]) || null, Entscheidung: x.m && x.m.weg ? "gestrichen" : "bleibt" }))),
+    Material: p.Faecher.flatMap((f) => f.Aufgaben.map((a) => ({ a, m: e.mat[a.MaterialID], frei: (e.fach[f.Fach] || {}).frei })).filter((x) => (x.m && (x.m.stand || x.m.tag || x.m.weg || x.m.sitzt || x.m.notiz)) || (x.frei && x.frei[x.a.MaterialID])).map((x) => ({
+      MaterialID: x.a.MaterialID, FortschrittProzent: x.frei && x.frei[x.a.MaterialID] ? 100 : ((x.m && x.m.stand) || 0) * 25, Tag: (x.m && x.m.tag) || null, Zeitraum: (x.m && ZEITEN[x.m.zeit]) || null, Entscheidung: x.m && x.m.weg ? "gestrichen" : "bleibt",
+      Einschaetzung: (x.m && x.m.sitzt) || null, Notiz: (x.m && x.m.notiz) || null }))),
     Faecher: p.Faecher.map((f) => {
       const x = e.fach[f.Fach] || { ueben: [] }, ideen = vorschlaege(f, "Zeigen");
       return { Fach: f.Fach, Paket: f.Paket, Vorhersage: x.vorhersage ?? null, Ergebnis: x.ergebnis ?? null, Maximal: x.max ?? null, StartCheck: x.einstufung || null,

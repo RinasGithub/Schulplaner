@@ -16,7 +16,7 @@
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.45 system-ui, "Segoe UI", Roboto, sans-serif; padding-bottom: 76px; }
-header { position: sticky; top: 0; z-index: 5; background: var(--akzent); color: var(--akzent-text); padding: 10px 16px; }
+header { position: sticky; top: 0; z-index: 5; background: var(--akzent); color: var(--akzent-text); padding: 10px 68px 10px 16px; }
 header h1 { margin: 0; font-size: 18px; }
 header p { margin: 2px 0 0; font-size: 13px; opacity: .9; }
 main { max-width: 720px; margin: 0 auto; padding: 12px 16px 24px; outline: none; }
@@ -75,3 +75,34 @@ details.verschieben summary { color: var(--akzent); cursor: pointer; min-height:
 button.tagzeile { width: 100%; padding: 4px 0; }
 .weiter { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
 @media (min-width: 900px) { body { font-size: 17px; } main { max-width: 860px; } }
+/* 0.6.0: Karten wie im Mock-up – Status-Symbole rechts, Auswahl-Leiste, Symbol-Leiste unten, Mond-Knopf */
+:root { --gelb: #f2c230; --rot: #b3261e; }
+:root[data-theme="dark"] { --rot: #ff8a80; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --rot: #ff8a80; } }
+button.thema { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); width: 44px; height: 44px; border-radius: 50%; border: 0; background: rgba(255,255,255,.18); color: inherit; display: grid; place-items: center; }
+.fachname .punkt { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: var(--farbe, var(--akzent)); margin-right: 6px; vertical-align: 0; }
+.kartenkopf { display: flex; gap: 8px; align-items: flex-start; }
+.kopftext { flex: 1; min-width: 0; }
+.statusse { display: flex; gap: 2px; flex: none; }
+button.status { width: 44px; height: 44px; border: 0; background: none; padding: 0; display: grid; place-items: center; border-radius: 50%; }
+button.status[aria-expanded="true"] { background: var(--chip); }
+.leiste { display: flex; gap: 6px; padding: 6px; margin: 8px 0 4px; background: var(--chip); border-radius: 26px; }
+.leiste button { flex: 1; height: 52px; border: 2px solid transparent; border-radius: 26px; background: var(--karte); display: grid; place-items: center; }
+.leiste button[aria-pressed="true"] { border-color: var(--gut); box-shadow: 0 0 0 1px var(--gut); }
+.grau { color: var(--leise); display: inline-grid; }
+.gruen { color: var(--gut); display: inline-grid; }
+.eingeplant { color: var(--leise); font-size: 14px; margin-top: 8px; }
+.planen { margin-top: 8px; }
+select.rot { border: 1.5px solid var(--rot); color: var(--rot); font-weight: 700; }
+.ikonleiste { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 10px; }
+.ikon { width: 48px; height: 48px; border-radius: 14px; border: 1px solid var(--linie); background: var(--karte); color: var(--text); display: inline-grid; place-items: center; position: relative; text-decoration: none; }
+.ikon[aria-expanded="true"] { background: var(--chip); border-color: var(--akzent); }
+.ikon.hat::after { content: ""; position: absolute; top: 6px; right: 6px; width: 9px; height: 9px; border-radius: 50%; background: var(--akzent); }
+.chip.klein { min-height: 40px; font-size: 13.5px; }
+.rechts { margin-left: auto; }
+.aufklapp { margin-top: 8px; padding: 10px 12px; background: var(--chip); border-radius: 10px; font-size: 14.5px; }
+.aufklapp textarea { background: var(--feld); }
+.aufklapp details summary { color: var(--akzent); cursor: pointer; min-height: 32px; }
+.sogehts { white-space: pre-line; }
+.symbole li { align-items: center; }
+.symbole li > svg, .symbole li > .grau, .symbole li > .gruen { flex: none; }
