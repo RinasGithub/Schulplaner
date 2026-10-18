@@ -106,3 +106,49 @@ select.rot { border: 1.5px solid var(--rot); color: var(--rot); font-weight: 700
 .sogehts { white-space: pre-line; }
 .symbole li { align-items: center; }
 .symbole li > svg, .symbole li > .grau, .symbole li > .gruen { flex: none; }
+/* 0.7.0: Heute (fertig, Bahn-Modus, Konzentration), Link melden, Hilfe holen */
+:root { --orange: #c25e00; --blau: #1f5fbf; }
+:root[data-theme="dark"] { --orange: #ffb15c; --blau: #8fb4e6; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) { --orange: #ffb15c; --blau: #8fb4e6; } }
+button.fahne { width: 32px; height: 48px; border: 0; background: none; color: var(--leise); display: inline-grid; place-items: center; margin-left: -6px; }
+.fahne.gemeldet { color: var(--orange); display: inline-grid; }
+.ikon.hilfe-angefragt { color: var(--blau); border-color: var(--blau); }
+.ikon.hilfe-nachhaken { color: var(--orange); border-color: var(--orange); box-shadow: 0 0 0 1px var(--orange); }
+.ikon.hilfe-Termin { color: var(--gut); border-color: var(--gut); }
+.ikon.hilfe-geklaert { color: var(--leise); }
+.hinweis.nachhaken { border-left-color: var(--orange); }
+.versuche { margin: 0 0 6px; padding-left: 18px; font-size: 13.5px; color: var(--leise); }
+.wege { margin-top: 8px; }
+.wege .knopf { gap: 6px; }
+.heutekopf .titel { font-size: 17px; }
+.pomo { text-align: center; }
+.pomo-zeit { font-size: 44px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: .03em; margin: 6px 0 0; }
+.pomo-phase { margin: 0 0 4px; color: var(--leise); }
+.pomo .zeile { justify-content: center; }
+textarea[data-a="hilfe-text"] { min-height: 140px; }
+/* 0.8.0: Ampel, Fortschritt mit Zeitlinie, Teil 1/2, Arbeitszeit, Notizen mit Art und Mikrofon */
+nav button { font-size: 12px; padding: 0 2px; }
+.ampel { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 700; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--linie); background: var(--karte); white-space: nowrap; }
+.ampel i { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+.ampel-gruen i { background: var(--gut); } .ampel-gelb i { background: var(--gelb); box-shadow: 0 0 0 1px #8a6d00; } .ampel-rot i { background: #d64535; } .ampel-blau i { background: var(--blau); }
+.teil { font-size: 12px; padding: 2px 8px; border-radius: 10px; background: var(--chip); color: var(--text); }
+.zeitlinie { display: flex; gap: 2px; align-items: stretch; height: 28px; margin: 8px 0 6px; }
+.zeitlinie span { flex: 1; border-radius: 3px; background: var(--akzent); opacity: .85; }
+.zeitlinie span.fw { background: repeating-linear-gradient(135deg, var(--akzent) 0 4px, var(--chip) 4px 7px); }
+.zeitlinie span.ferien { background: var(--chip); border: 1px dashed var(--linie); }
+.zeitlinie span.wdh { background: var(--lila); }
+.zeitlinie span.vorbei { opacity: .35; }
+.zeitlinie span.jetzt { outline: 3px solid var(--gelb); outline-offset: 1px; opacity: 1; }
+.zeitlinie .pruefung { flex: none; width: 26px; background: #d64535; color: #fff; font-weight: 700; font-size: 13px; display: grid; place-items: center; }
+.legende { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 12.5px; color: var(--leise); }
+.legende i { display: inline-block; width: 12px; height: 12px; border-radius: 3px; margin-right: 4px; vertical-align: -1px; background: var(--akzent); }
+.legende i.fw { background: repeating-linear-gradient(135deg, var(--akzent) 0 3px, var(--chip) 3px 5px); } .legende i.ferien { background: var(--chip); border: 1px dashed var(--linie); }
+.legende i.wdh { background: var(--lila); } .legende i.jetzt { background: none; outline: 2px solid var(--gelb); }
+.balken.jahr { position: relative; overflow: visible; }
+.balken.jahr b { position: absolute; top: -4px; width: 2px; height: 16px; background: var(--text); }
+details.offen summary { cursor: pointer; }
+.notizfeld .notizkopf { margin-top: 0; flex-wrap: nowrap; }
+.notizfeld .notizkopf select { flex: 1; }
+.ikon.an { background: #d64535; color: #fff; border-color: #d64535; }
+.filter { margin-bottom: 6px; grid-template-columns: 1fr 1fr; }
+.aufklapp input[type="time"] { width: 100%; min-height: 44px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--linie); background: var(--feld); color: var(--text); font: inherit; }

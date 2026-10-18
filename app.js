@@ -1,7 +1,7 @@
 /* Schulplaner – Handy-App. Liest Wochenpakete (JSON aus der Datenbank), speichert alle Eintragungen
    nur auf diesem Gerät (localStorage) und gibt sie als Rückmeldung-Datei zurück. Kein Server. */
 "use strict";
-const APP_VERSION = "0.6.0";
+const APP_VERSION = "0.8.0";
 const SCHLUESSEL = "schulplaner";
 const TAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const ZEITEN = { B: "Bahnfahrt", F: "Vormittag", N: "Nachmittag", A: "Abend", W: "Wochenende" };
@@ -10,6 +10,7 @@ const UEBEN_IDEEN = ["Aufgaben im Buch", "Online-Übung", "Karteikarten", "Selbs
 const URSACHEN = ["Methode", "Menge", "Zeitpunkt", "Ort", "Fokus", "Sonstiges"];
 const TAG_LANG = { Mo: "Montag", Di: "Dienstag", Mi: "Mittwoch", Do: "Donnerstag", Fr: "Freitag", Sa: "Samstag", So: "Sonntag" };
 // Wie sitzt es? Leer = noch nicht eingeschätzt (Sanduhr). Die Werte gehen so in die Datenbank (tblWegMaterial.Einschaetzung).
+const NOTIZ_ARTEN = [["Frage", "Frage"], ["schwierig", "schwierig"], ["Idee", "Idee"], ["sonstiges", "sonstiges"]];
 const SITZT = [["", "noch nicht eingeschätzt"], ["sitzt", "sitzt"], ["unsicher", "unsicher"], ["nicht verstanden", "nicht verstanden"]];
 // Beispiele zum Üben, klein unter der Übungszeit: in der Bahn nur Leichtes
 const UEBEN_BAHN = "zum Beispiel Karteikarten, Vokabeln, ein Video ansehen, etwas Kurzes lesen";
@@ -17,7 +18,7 @@ const UEBEN_TISCH = "zum Beispiel Aufgaben im Buch, Online-Übung, Karteikarten,
 
 // ---------------------------------------------------------------- Zustand
 let Z = laden();
-let ansicht = { seite: "heute", fach: null };   // dazu kurz offen: leiste (Auswahl unter dem Titel), notiz, tipp
+let ansicht = { seite: "heute", fach: null };   // dazu kurz offen: leiste (Auswahl unter dem Titel), notiz, tipp, melden, hilfe
 
 function laden() {
   let z = null;
@@ -122,6 +123,11 @@ const IKON = {
   mond: '<path d="M20 14.5A8 8 0 0 1 9.5 4 8 8 0 1 0 20 14.5z"/>',
   sonne: '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.4 1.4M17.6 17.6L19 19M5 19l1.4-1.4M17.6 6.4L19 5"/>',
   sanduhr: '<path d="M6 3h12M6 21h12M7.5 3c0 5 4.5 6 4.5 9s-4.5 4-4.5 9M16.5 3c0 5-4.5 6-4.5 9s4.5 4 4.5 9"/>',
+  fahne: '<path d="M6 21V4"/><path d="M6 4h11l-2.5 4L17 12H6"/>',
+  joker: '<rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M9.8 9.3a2.3 2.3 0 1 1 3.2 2.1c-.6.3-1 .8-1 1.4v.6M12 16.8h.01"/>',
+  uhr: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
+  mikro: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  kopieren: '<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h2"/>',
 };
 const ikon = (name, gross) => svg(IKON[name], gross);
 // Fortschritt als grüner Kreis: leer, ¼, ½, ¾ oder voll
@@ -172,18 +178,157 @@ function planZeile(a, m, id) {
   if (m.tag && m.zeit) return `<p class="eingeplant">Eingeplant: ${esc(TAG_LANG[m.tag] + " " + ZEITEN[m.zeit])}</p><details class="verschieben"><summary>ändern</summary>${felder}</details>`;
   return `<div class="planen">${felder}</div>`;
 }
+// ---- Notizfeld: Art der Notiz, Textfeld, Mikrofon (Spracherkennung von Chrome, wo vorhanden)
+const SPRACHE = window.SpeechRecognition || window.webkitSpeechRecognition;
+let sprachErkennung = null;
+function notizFeld(aktion, wert, art, platz, extra) {
+  return `<div class="notizfeld"><div class="zeile notizkopf">${auswahl(aktion + "-art", NOTIZ_ARTEN, art, "Art der Notiz", extra)}` +
+    (SPRACHE ? `<button class="ikon" data-a="sprechen" aria-label="Sprechen statt tippen" title="Sprechen statt tippen">${ikon("mikro")}</button>` : "") + `</div>` +
+    text(aktion, wert || "", platz, extra) + (SPRACHE ? "" : `<p class="leise">Tipp: Mit der Mikrofon-Taste der Tastatur kannst du auch diktieren.</p>`) + `</div>`;
+}
+// Spracheingabe: Text erscheint live im Feld und lässt sich danach korrigieren. Gespeichert wird nur der Text (Kennzeichen „gesprochen“).
+function sprechen(knopf) {
+  const feld = knopf.closest(".notizfeld").querySelector("textarea");
+  if (!Z.sprachOk) {
+    if (!confirm("Die Spracherkennung von Chrome schickt die Aufnahme zur Umwandlung in Text an Google. Gespeichert wird nur der Text. Einverstanden?")) return;
+    Z.sprachOk = true; speichern();
+  }
+  if (sprachErkennung) { sprachErkennung.stop(); return; }   // zweiter Tipp beendet die Aufnahme
+  const r = new SPRACHE(), anfang = feld.value ? feld.value.replace(/\s*$/, " ") : "";
+  r.lang = "de-DE"; r.interimResults = true; r.continuous = true;
+  r.onresult = (ev) => { let t = ""; for (const x of ev.results) t += x[0].transcript; feld.value = anfang + t; };
+  r.onend = () => { sprachErkennung = null; knopf.classList.remove("an"); feld.dataset.gesprochen = "1"; feld.dispatchEvent(new Event("change", { bubbles: true })); };
+  r.onerror = () => { sprachErkennung = null; knopf.classList.remove("an"); };
+  sprachErkennung = r; knopf.classList.add("an"); r.start();
+}
+
+// ---- Arbeitszeit (Uhr): freiwillig, von–bis oder Dauer, mehrere Einträge werden addiert
+const dauerText = (min) => (min >= 60 ? `${Math.floor(min / 60)} Std.${min % 60 ? " " + (min % 60) + " Min." : ""}` : `${min} Min.`);
+const zeitraumAus = (uhr) => { const h = Number(String(uhr).slice(0, 2)); return h < 13 ? "Freiarbeit / Vormittag" : h < 18 ? "Nachmittag" : "Abend"; };
+const summeZeit = (m) => (m.zeiten || []).reduce((s, z) => s + (z.min || 0), 0);
+function uhrFeld(a, m, id) {
+  const art = ansicht.uhrArt || "vonbis", tag = TAGE.includes(heuteTag()) ? heuteTag() : "Mo";
+  let h = `<div class="aufklapp"><p><strong>Arbeitszeit eintragen</strong> <span class="leise">(freiwillig)</span></p>` + chips("uhr-art", [["vonbis", "von – bis"], ["dauer", "Dauer"]], art) +
+    (art === "vonbis" ? `<div class="zwei"><label>von<input type="time" class="z-von"></label><label>bis<input type="time" class="z-bis"></label></div>`
+      : `<div class="zwei"><label>Stunden<input type="number" min="0" max="12" class="z-std" value="0"></label><label>Minuten<input type="number" min="0" max="59" step="5" class="z-min" value="30"></label></div>`) +
+    `<label>An welchem Tag?<select class="z-tag">${TAGE.map((t) => `<option value="${t}" ${t === tag ? "selected" : ""}>${TAG_LANG[t]}</option>`).join("")}</select></label>
+    <button class="knopf haupt voll" data-a="zeit-eintragen" ${id}>Eintragen</button>`;
+  if ((m.zeiten || []).length) h += `<ul class="versuche">` + m.zeiten.map((z, i) => `<li>${esc(TAG_LANG[z.tag] || z.tag)}${z.von ? ` ${esc(z.von)}–${esc(z.bis)}` : ""} · ${dauerText(z.min)}${z.zeitraum ? " · " + esc(z.zeitraum) : ""} <button class="link" data-a="zeit-weg" data-i="${i}" ${id}>entfernen</button></li>`).join("") + `</ul>`;
+  return h + `</div>`;
+}
+
+// ---- Link melden (Fähnchen neben dem Link)
+const GRUENDE = ["geht nicht", "falscher Inhalt", "kostenpflichtig oder Anmeldung nötig", "sonstiges"];
+function meldenFeld(a, m, id) {
+  return `<div class="aufklapp"><p><strong>Was ist mit dem Link?</strong></p><div class="chips">` +
+    GRUENDE.map((g) => `<button class="chip" data-a="melden" data-w="${esc(g)}" ${id} aria-pressed="${!!m.meldung && m.meldung.grund === g}">${esc(g)}</button>`).join("") + `</div>` +
+    (m.meldung ? feld("melden-text", m.meldung.text || "", "Optional ein Satz dazu", id) + `<p class="leise">Gemeldet. Die Meldung geht mit der Rückmeldung an Mama und Papa.</p><button class="link" data-a="melden-weg" ${id}>Meldung zurücknehmen</button>` : `<p class="leise">Tipp auf einen Grund. Die Meldung geht mit der Rückmeldung an Mama und Papa.</p>`) + `</div>`;
+}
+// ---- Hilfe holen (Joker-Karte): Person wählen, Text entsteht von selbst, Weg wählen, danach „Wie ist es gelaufen?“
+const kontakte = () => (paket() && paket().Kontakte) || [];
+const HILFE_STATUS = { "": "angefragt", Termin: "Termin", "nicht erreicht": "nachhaken", "geklärt": "geklärt" };
+function hilfeStatus(m) { const l = m.hilfe || []; if (!l.length) return null; return HILFE_STATUS[l[l.length - 1].ergebnis || ""]; }
+// Telefonnummer international: 0171 … wird +49171…
+function nummer(t) { let n = String(t || "").replace(/[^\d+]/g, ""); if (n.startsWith("00")) n = "+" + n.slice(2); else if (n.startsWith("0")) n = "+49" + n.slice(1); return n; }
+function hilfeText(f, a, person) {
+  const p = paket();
+  return `Hallo ${person}, ich komme bei einer Aufgabe nicht weiter.\n${f.Fach}, Woche ${p.Woche.WocheID}: ${a.Titel}\n${[kurzQuelle(a.Quelle), a.Fundstelle].filter(Boolean).join(", ")}\nMeine Frage: \nKannst du mir helfen? ${p.Plan.Lernende}`;
+}
+// Mögliche Wege aus den Kontaktdaten; der bevorzugte steht vorn mit ★
+function hilfeWege(k, text, f) {
+  const tel = k.Telefon ? nummer(k.Telefon) : "", w = [], enc = encodeURIComponent;
+  if (tel) w.push(["Anrufen", "tel:" + tel]);
+  if (tel) w.push(["SMS", `sms:${tel}?body=${enc(text)}`]);
+  if (tel && k.WhatsApp) w.push(["WhatsApp", `https://wa.me/${tel.replace("+", "")}?text=${enc(text)}`]);
+  if (tel && k.Signal) w.push(["Signal", `https://signal.me/#p/${tel}`]);
+  if (k.Email) w.push(["E-Mail", `mailto:${k.Email}?subject=${enc("Frage zu " + f.Fach)}&body=${enc(text)}`]);
+  w.push(["persönlich", ""]);
+  return w.sort((x, y) => (y[0] === k.Bevorzugt) - (x[0] === k.Bevorzugt));
+}
+function hilfeFeld(f, a, m, id) {
+  const l = m.hilfe || [], letzte = l[l.length - 1], e = m.hilfeEntwurf || {};
+  let h = `<div class="aufklapp">`;
+  if (l.length) h += `<ul class="versuche">` + l.map((x) => `<li>${esc(kurzDatum(x.am.slice(0, 10)))} · ${esc(x.weg)} an ${esc(x.person)}${x.ergebnis ? " · " + esc(x.ergebnis) : " · offen"}${x.termin ? " (" + esc(x.termin) + ")" : ""}</li>`).join("") + `</ul>`;
+  if (letzte && !letzte.ergebnis) {
+    h += `<p><strong>Wie ist es gelaufen?</strong></p>` + chips("hilfe-ergebnis", [["Termin", "erreicht, Termin"], ["nicht erreicht", "nicht erreicht"], ["geklärt", "geklärt"]], "", id);
+  } else if (letzte && letzte.ergebnis === "Termin" && !letzte.termin) {
+    h += `<label>Wann ist der Termin?${feld("hilfe-termin", "", "zum Beispiel Di 17 Uhr", id)}</label>`;
+  }
+  h += `<p><strong>${l.length ? "Neuer Versuch" : "Wen fragst du?"}</strong></p>` + auswahl("hilfe-person", kontakte().map((k) => [k.PersonName, k.PersonName + (k.Rolle ? " · " + k.Rolle.split(",")[0] : "")]), e.person, "Person wählen", id);
+  const k = kontakte().find((x) => x.PersonName === e.person);
+  if (k) {
+    const wege = hilfeWege(k, e.text, f), nurReden = !k.Telefon && !k.Email;
+    h += `<label>${nurReden ? "Stichpunkte fürs Gespräch" : "Deine Nachricht (Stichpunkte fürs Gespräch)"}${text("hilfe-text", e.text || "", "", id)}</label>
+      <div class="zeile wege">` + wege.map(([weg, url]) => {
+        const name = (weg === k.Bevorzugt ? "★ " : "") + weg;
+        if (weg === "Signal") return `<button class="knopf" data-a="hilfe-signal" data-w="${esc(url)}" ${id}>${esc(name)}</button>`;
+        return url ? `<a class="knopf" href="${esc(url)}" target="_blank" rel="noopener" data-a="hilfe-weg" data-w="${esc(weg)}" ${id}>${esc(name)}</a>` : `<button class="knopf" data-a="hilfe-weg" data-w="${esc(weg)}" ${id}>${esc(name)}</button>`;
+      }).join("") + `<button class="knopf" data-a="hilfe-kopieren" ${id}>${ikon("kopieren", 18)} Text kopieren</button></div>`;
+    if (nurReden) h += `<p class="leise">Für ${esc(k.PersonName)} sind kein Telefon und keine E-Mail eingetragen. Frag persönlich.</p>`;
+  } else if (!kontakte().length) h += `<p class="leise">Noch keine Kontakte im Wochenpaket.</p>`;
+  return h + `</div>`;
+}
+
 // Symbol-Leiste unten: Link öffnen (Symbol je nach Art), Notiz (mit Punkt, wenn eine da ist), Glühbirne (Lerntechnik)
 const LINK_IKON = { Video: "film", "Hören": "hoeren", PDF: "pdf", "Online-Übung": "uebung", "Online-Text": "welt" };
-function ikonLeiste(a, m, id, mitWeg) {
-  const md = medium(a), tech = a.Techniken || [];
-  let h = `<div class="ikonleiste">`;
-  if (a.URL) h += `<a class="ikon" href="${esc(a.URL)}" target="_blank" rel="noopener" aria-label="${esc(md.knopf)}" title="${esc(md.knopf)}">${ikon(LINK_IKON[md.art] || "welt")}</a>`;
+function ikonLeiste(f, a, m, id, mitWeg) {
+  const md = medium(a), tech = a.Techniken || [], hs = hilfeStatus(m);
+  let h = summeZeit(m) ? `<p class="eingeplant">Arbeitszeit: geplant ${a.Minuten ? dauerText(a.Minuten) : "–"} · gebraucht ${dauerText(summeZeit(m))}</p>` : "";
+  h += `<div class="ikonleiste">`;
+  if (a.URL) h += `<a class="ikon" href="${esc(a.URL)}" target="_blank" rel="noopener" aria-label="${esc(md.knopf)}" title="${esc(md.knopf)}">${ikon(LINK_IKON[md.art] || "welt")}</a>
+    <button class="fahne ${m.meldung ? "gemeldet" : ""}" data-a="melden-auf" data-w="${a.MaterialID}" aria-expanded="${ansicht.melden === a.MaterialID}" aria-label="Link melden${m.meldung ? " (gemeldet)" : ""}" title="Link melden">${ikon("fahne", 20)}</button>`;
   h += `<button class="ikon ${m.notiz ? "hat" : ""}" data-a="notiz-auf" data-w="${a.MaterialID}" aria-expanded="${ansicht.notiz === a.MaterialID}" aria-label="Notiz${m.notiz ? " (vorhanden)" : ""}" title="Notiz">${ikon("notiz")}</button>`;
   if (tech.length) h += `<button class="ikon" data-a="tipp-auf" data-w="${a.MaterialID}" aria-expanded="${ansicht.tipp === a.MaterialID}" aria-label="Lerntechnik" title="Lerntechnik">${ikon("birne")}</button>`;
+  h += `<button class="ikon ${m.zeiten && m.zeiten.length ? "hat" : ""}" data-a="uhr-auf" data-w="${a.MaterialID}" aria-expanded="${ansicht.uhr === a.MaterialID}" aria-label="Arbeitszeit eintragen" title="Arbeitszeit">${ikon("uhr")}</button>`;
+  h += `<button class="ikon ${hs ? "hilfe-" + hs.replace(/ä/g, "ae") : ""}" data-a="hilfe-auf" data-w="${a.MaterialID}" aria-expanded="${ansicht.hilfe === a.MaterialID}" aria-label="Hilfe holen${hs ? " (" + hs + ")" : ""}" title="Hilfe holen">${ikon("joker")}</button>`;
   if (mitWeg) h += `<button class="chip klein rechts" data-a="weg" ${id} aria-pressed="${!!m.weg}">lasse ich weg</button>`;
   h += `</div>`;
-  if (ansicht.notiz === a.MaterialID) h += `<div class="aufklapp">${text("m-notiz", m.notiz || "", "Notiz zu dieser Aufgabe: Fragen, Schwieriges, Ideen", id)}</div>`;
+  if (ansicht.notiz === a.MaterialID) h += `<div class="aufklapp">${notizFeld("m-notiz", m.notiz, m.notizArt, "Notiz zu dieser Aufgabe: Fragen, Schwieriges, Ideen", id)}</div>`;
+  if (ansicht.uhr === a.MaterialID) h += uhrFeld(a, m, id);
+  if (ansicht.melden === a.MaterialID) h += meldenFeld(a, m, id);
+  if (ansicht.hilfe === a.MaterialID) h += hilfeFeld(f, a, m, id);
   if (ansicht.tipp === a.MaterialID) h += `<div class="aufklapp">` + tech.map((t) => `<p><strong>${esc(t.Technik)}</strong><br>${esc(t.KurzErklaert || "")}</p>${t.SoGehts ? `<details><summary>So geht's</summary><p class="sogehts">${esc(t.SoGehts)}</p></details>` : ""}`).join("") + `</div>`;
+  return h;
+}
+
+// ---------------------------------------------------------------- Ampel (Regel wie in den Excel-Dateien)
+// Rückstand = Pflichtaufgaben, die nicht fertig sind und aus einer früheren Woche stammen
+// oder in dieser Woche auf einen schon vergangenen Tag geplant waren. Freiwillige Fächer haben keine Ampel.
+function tagVorbei(tag) { const p = paket(), d = datum(p.Woche.StartDatum); d.setDate(d.getDate() + TAGE.indexOf(tag)); const iso = d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); return iso < heuteIso(); }
+// Ist eine Aufgabe einer früheren Woche hier in der App schon fertig (oder gestrichen), obwohl die Datenbank das noch nicht weiß?
+const lokalErledigt = (x) => { const m = Z.e[x.WocheID] && Z.e[x.WocheID].mat[x.MaterialID]; return !!m && (m.stand === 4 || !!m.weg); };
+function rueckstand(f) {
+  if (f.Optional) return null;
+  const frueher = (paket().OffenVorwochen || []).filter((x) => x.FachID === f.Fach && !lokalErledigt(x));
+  const vergangen = pflicht(f).filter((a) => {
+    const m = eMat(a.MaterialID); if (m.weg || m.stand === 4) return false;
+    const tage = verteilung().filter((v) => v.MaterialID === a.MaterialID).map(vtTag);
+    if (!tage.length && m.tag) tage.push(m.tag);
+    return tage.length > 0 && tage.every(tagVorbei);
+  });
+  return { anzahl: frueher.length + vergangen.length, frueher, vergangen };
+}
+function ampel(f) {
+  const r = rueckstand(f);
+  if (!r) return "";
+  const voraus = !r.anzahl && f.Aufgaben.some((a) => /vorgezogen aus/.test(a.Titel) && eMat(a.MaterialID).stand === 4);
+  const [farbe, text] = r.anzahl > 3 ? ["rot", `${r.anzahl} im Rückstand`] : r.anzahl ? ["gelb", `${r.anzahl} im Rückstand`] : voraus ? ["blau", "voraus"] : ["gruen", "im Plan"];
+  return `<span class="ampel ampel-${farbe}"><i aria-hidden="true"></i>${text}</span>`;
+}
+// Teil 1/2: Die Stoffverteilung hat eine Aufgabe auf mehrere Zeiten verteilt
+function teilMarke(v) {
+  const alle = verteilung().filter((x) => x.MaterialID && x.MaterialID === v.MaterialID).sort(sortVt);
+  return alle.length > 1 ? `<span class="teil">Teil ${alle.indexOf(v) + 1}/${alle.length}</span>` : "";
+}
+// Kasten oben in der Woche: offene Pflichtaufgaben früherer Wochen (aus der Datenbank, ohne das, was hier schon fertig ist)
+function offenKasten() {
+  const p = paket(), pflichtFaecher = p.Faecher.filter((f) => !f.Optional).map((f) => f.Fach);
+  const l = (p.OffenVorwochen || []).filter((x) => pflichtFaecher.includes(x.FachID) && !lokalErledigt(x));
+  let h = "";
+  if (l.length) h += `<details class="hinweis offen"><summary><strong>Offen aus früheren Wochen: ${l.length} Pflichtaufgaben</strong></summary><ul class="versuche">` +
+    l.map((x) => `<li>${esc(x.FachID)} · ${esc(x.WocheID)} · ${esc(x.Titel)}</li>`).join("") + `</ul><p class="leise">Sie kommen nicht von selbst in diese Woche. Am Sonntag mit Mama oder Papa entscheiden: nachholen, später oder streichen.</p></details>`;
+  const viel = p.Faecher.filter((f) => f.Aufgaben.filter((a) => a.KernVertiefung === "Kern" && /nachgeholt aus/.test(a.Titel)).length > 3);
+  if (viel.length) h += `<div class="hinweis nachhaken">In ${esc(viel.map((f) => f.Fach).join(", "))} holst du mehr als 3 Aufgaben nach. Sprich mit Mama oder Papa, ob der Plan angepasst werden muss.</div>`;
   return h;
 }
 
@@ -207,7 +352,7 @@ function aufgabeKarte(f, a, mitFach) {
     ${kartenKopf(`<div class="titel">${esc(a.Titel)}</div><div class="meta">${artZeichen(a)} · ${esc(meta)}</div>`, "stand", m.stand || 0, id, m.sitzt || "")}
     <p>${esc(a.Anweisung)}</p>
     ${m.weg ? `<p class="leise">Lasse ich weg.</p>` : planZeile(a, m, id)}
-    ${ikonLeiste(a, m, id, true)}
+    ${ikonLeiste(f, a, m, id, true)}
   </div>`;
 }
 
@@ -217,14 +362,14 @@ function vtKarte(v) {
   const p = paket(), f = p.Faecher.find((x) => x.Fach === v.FachID);
   if (!f) return "";
   const a = v.MaterialID && f.Aufgaben.find((x) => x.MaterialID === v.MaterialID);
-  const kopf = `<div class="zeile kopfzeile"><span class="fachname">${esc(f.Fach)} · ${esc(v.Art)}</span>${marke(v)}<span class="leise">${v.Minuten ? v.Minuten + " Min." : ""}</span></div>`;
+  const kopf = `<div class="zeile kopfzeile"><span class="fachname">${esc(f.Fach)} · ${esc(v.Art)}</span>${teilMarke(v)}${marke(v)}<span class="leise">${v.Minuten ? v.Minuten + " Min." : ""}</span></div>`;
   if (a) {
     const m = eMat(a.MaterialID), id = `data-id="${a.MaterialID}"`;
     const meta = [kurzQuelle(a.Quelle), a.Fundstelle, a.Minuten ? "insgesamt " + a.Minuten + " Min." : ""].filter(Boolean).join(" · ");
     return `<div class="karte fach ${m.stand === 4 ? "fertig" : ""} ${m.weg ? "weg" : ""}" style="--farbe:${esc(f.Farbe)}">${kopf}
       ${kartenKopf(`<div class="titel">${esc(a.Titel)}</div><div class="meta">${artZeichen(a)} · ${esc(meta)}</div>`, "stand", m.stand || 0, id, m.sitzt || "")}
       <p>${esc(a.Anweisung)}</p>${m.weg ? `<p class="leise">Lasse ich weg.</p>` : ""}
-      ${ikonLeiste(a, m, id, false)}${verschieben(v)}</div>`;
+      ${ikonLeiste(f, a, m, id, false)}${verschieben(v)}</div>`;
   }
   const o = eVt(v.VerteilungID), x = `data-id="${v.VerteilungID}"`;
   return `<div class="karte fach ${o.stand === 4 ? "fertig" : ""}" style="--farbe:${esc(f.Farbe)}">${kopf}
@@ -257,11 +402,43 @@ function seiteTag(tag, istHeute) {
   if (eigene) h += `<h2>Meine Übungen</h2>` + eigene;
   return h;
 }
+// Konzentration 25 / 5: nur eine Hilfe zum Dranbleiben, misst keine Lernzeit
+const POMO = { lernen: 25 * 60, pause: 5 * 60 };
+let pomo = { phase: "lernen", rest: POMO.lernen, ende: null };
+const mmss = (sek) => `${String(Math.floor(sek / 60)).padStart(2, "0")}:${String(Math.max(0, Math.round(sek % 60))).padStart(2, "0")}`;
+function pomoKarte() {
+  return `<div class="karte pomo"><div class="titel">Konzentration 25 / 5</div>
+    <p class="leise">Nur eine Hilfe zum Dranbleiben. Sie misst keine Lernzeit.</p>
+    <div class="pomo-zeit" id="pomo-zeit" aria-live="off">${mmss(pomo.rest)}</div><p class="pomo-phase" id="pomo-phase">${pomo.phase === "lernen" ? "Lernen" : "Pause"}</p>
+    <div class="zeile"><button class="knopf haupt" data-a="pomo-start" id="pomo-knopf">${pomo.ende ? "Anhalten" : "Start"}</button><button class="knopf" data-a="pomo-reset">Zurücksetzen</button></div></div>`;
+}
+function pomoTick() {
+  if (!pomo.ende) return;
+  pomo.rest = (pomo.ende - Date.now()) / 1000;
+  if (pomo.rest <= 0) {                                   // Phase vorbei: kurz vibrieren und piepen, dann die andere Phase starten
+    pomo.phase = pomo.phase === "lernen" ? "pause" : "lernen"; pomo.rest = POMO[pomo.phase]; pomo.ende = Date.now() + pomo.rest * 1000;
+    try { navigator.vibrate && navigator.vibrate([300, 150, 300]); } catch (e) { /* ohne Vibration */ }
+    try { const c = new (window.AudioContext || window.webkitAudioContext)(), o = c.createOscillator(); o.frequency.value = 880; o.connect(c.destination); o.start(); o.stop(c.currentTime + 0.4); } catch (e) { /* ohne Ton */ }
+  }
+  const z = document.getElementById("pomo-zeit"), ph = document.getElementById("pomo-phase");
+  if (z) z.textContent = mmss(pomo.rest);
+  if (ph) ph.textContent = pomo.phase === "lernen" ? "Lernen" : "Pause";
+}
+setInterval(pomoTick, 1000);
+// Was unterwegs geht: Videos, Hören, Online lesen oder üben (kein Buch)
+const unterwegs = (a) => !!a.URL && medium(a).art !== "PDF";
+function tagNotiz(tag) { const e = eintraege(); if (!e.tage) e.tage = {}; if (!e.tage[tag]) e.tage[tag] = {}; return e.tage[tag]; }
+// Hilfe-Anfragen, bei denen niemand erreicht wurde: orange oben auf Heute
+function nachhakenKasten() {
+  const p = paket(), l = [];
+  for (const f of p.Faecher) for (const a of f.Aufgaben) { const m = eintraege().mat[a.MaterialID]; if (m && hilfeStatus(m) === "nachhaken") l.push([f, a, m.hilfe[m.hilfe.length - 1]]); }
+  return l.length ? `<div class="hinweis nachhaken"><strong>Nachhaken:</strong> ` + l.map(([f, a, x]) => `${esc(a.Titel)} (${esc(f.Fach)}): ${esc(x.person)} nicht erreicht. <button class="link" data-a="fach" data-w="${esc(f.Fach)}">Zur Aufgabe</button>`).join("<br>") + `</div>` : "";
+}
 function seiteHeute() {
   const p = paket();
   if (!p) return ohnePaket();
   const tag = heuteTag(), heute = heuteIso();
-  let h = "";
+  let h = nachhakenKasten();
   const inWoche = heute >= p.Woche.StartDatum && heute <= p.Woche.EndDatum;
   if (!inWoche) h += `<div class="hinweis">Geladen ist ${esc(p.Woche.WocheID)} (${kurzDatum(p.Woche.StartDatum)} bis ${kurzDatum(p.Woche.EndDatum)}). Heute liegt nicht in dieser Woche.</div>`;
   if (p.Plan.PruefungAb) {
@@ -269,7 +446,28 @@ function seiteHeute() {
     if (tage >= 0) h += `<p class="leise">Noch ${tage} Tage bis zur ersten Prüfung.</p>`;
   }
   if (verteilung().length) {
-    h += seiteTag(tag, true);
+    // heute fertig x von y (Aufnehmen, Üben, Zeigen aus der Stoffverteilung)
+    const heuteVs = verteilung().filter((v) => vtTag(v) === tag);
+    const fertig = heuteVs.filter((v) => (v.MaterialID ? eMat(v.MaterialID).stand : eVt(v.VerteilungID).stand) === 4).length;
+    if (heuteVs.length) h += `<div class="karte heutekopf"><div class="titel">Heute fertig: ${fertig} von ${heuteVs.length}</div><div class="balken"><span style="width:${Math.round(fertig / heuteVs.length * 100)}%"></span></div></div>`;
+    h += `<div class="zeile">${chips("bahn", [["", "Alles"], ["1", "Bahn-Modus"]], Z.bahn ? "1" : "")}</div>`;
+    if (Z.bahn) {
+      // Bahn-Modus: die Bahnfahrten von heute und alles, was unterwegs geht
+      const bahnVs = heuteVs.filter((v) => /Bahn/.test(vtFenster(v))).sort(sortVt);
+      h += bahnVs.length ? `<h2><span aria-hidden="true">🚆</span> Bahnfahrten heute</h2>` + bahnVs.map(vtKarte).join("") : `<p class="leise">Heute sind keine Bahnfahrten eingeplant.</p>`;
+      // höchstens 6 Karten: erst Pflicht, dann freiwillig
+      const mehr = [];
+      for (const f of p.Faecher) for (const a of f.Aufgaben) {
+        const m = eMat(a.MaterialID);
+        if (unterwegs(a) && !m.weg && m.stand !== 4 && !bahnVs.some((v) => v.MaterialID === a.MaterialID)) mehr.push([f, a]);
+      }
+      mehr.sort((x, y) => (x[1].KernVertiefung === "Kern" ? 0 : 1) - (y[1].KernVertiefung === "Kern" ? 0 : 1));
+      h += `<h2>Geht auch unterwegs</h2><p class="leise">Videos, Hören und Online-Texte, die noch offen sind. Erst Pflicht, dann freiwillig.</p>` +
+        (mehr.slice(0, 6).map(([f, a]) => aufgabeKarte(f, a, true)).join("") || `<p class="leise">Alles erledigt.</p>`) +
+        (mehr.length > 6 ? `<p class="leise">und ${mehr.length - 6} weitere unter Woche bei den Fächern.</p>` : "");
+    } else h += seiteTag(tag, true);
+    h += pomoKarte();
+    h += `<h3>Notiz zum Tag</h3>${notizFeld("tag-notiz", tagNotiz(tag).notiz, tagNotiz(tag).art, "Wie lief es heute? Was war schwierig?", `data-tag="${tag}"`)}`;
     const ohne = p.Faecher.reduce((n, f) => n + pflicht(f).filter((a) => a.Phase !== 1 && a.Phase !== 4 && !eMat(a.MaterialID).weg && eMat(a.MaterialID).stand !== 4 && !verteilung().some((v) => v.MaterialID === a.MaterialID)).length, 0);
     if (ohne) h += `<div class="hinweis">${ohne} Pflichtaufgaben haben keine Zeit in der Stoffverteilung. <button class="link" data-a="seite" data-w="woche">Zur Woche</button></div>`;
     return h;
@@ -297,6 +495,7 @@ function seiteWoche() {
   if (!p) return ohnePaket();
   const wochen = Object.keys(Z.pakete).sort((a, b) => Z.pakete[a].Woche.Reihenfolge - Z.pakete[b].Woche.Reihenfolge);
   let h = `<div class="weiter">${wochen.length > 1 ? auswahl("woche", wochen.map((w) => [w, w + " · ab " + kurzDatum(Z.pakete[w].Woche.StartDatum)]), Z.woche, "Woche wählen") : `<p class="leise">${esc(p.Woche.Art)}</p>`}</div>`;
+  h += offenKasten();
   if (verteilung().length) {
     h += `<h2>Nach Tagen</h2><div class="karte"><ul class="liste">` + TAGE.map((t) => {
       const vs = verteilung().filter((v) => vtTag(v) === t), min = vs.reduce((s, v) => s + (v.Minuten || 0), 0);
@@ -308,7 +507,7 @@ function seiteWoche() {
   for (const f of p.Faecher.filter((x) => !x.Optional)) {
     const fs = fortschritt(f), e = eFach(f.Fach), t = f.Termin;
     h += `<div class="karte fach" style="--farbe:${esc(f.Farbe)}">
-      <span class="fachname">${esc(f.Fach)}</span>
+      <div class="zeile kopfzeile"><span class="fachname">${esc(f.Fach)}</span>${ampel(f)}</div>
       <div class="titel">${esc(f.Thema)}</div>
       <div class="meta">Paket: ${esc(f.Paket || "–")}${f.PaketSpaetestensBis ? " · bis " + kurzDatum(f.PaketSpaetestensBis) : ""}</div>
       <div class="balken"><span style="width:${Math.round(fs.anteil * 100)}%"></span></div>
@@ -326,6 +525,42 @@ function seiteWoche() {
       <p class="leise">${fs.fertig} von ${fs.anzahl} Aufgaben fertig</p>
       <button class="knopf voll" data-a="fach" data-w="${esc(f.Fach)}">Ansehen</button></div>`;
   }).join("");
+  const e = eintraege();
+  h += `<h3>Notiz zur Woche</h3>` + notizFeld("woche-notiz", e.wocheNotiz, e.wocheNotizArt, "Was fällt dir zu dieser Woche ein? Fragen, Ideen", "");
+  return h;
+}
+
+// ---------------------------------------------------------------- Fortschritt
+function seiteFortschritt() {
+  const p = paket();
+  if (!p) return ohnePaket();
+  let h = "";
+  // Zeitlinie über alle Wochen: jetzt, Ferien, Ferienwochen, Wiederholung, Prüfung
+  const wochen = p.Wochen || [], heute = heuteIso();
+  if (wochen.length) {
+    const klasse = (w) => (/Wiederholung/.test(w.Art) ? "wdh" : /Ferienwoche/.test(w.Art) ? "fw" : /Ferien/.test(w.Art) ? "ferien" : "lern");
+    h += `<h2>Dein Weg bis zur Prüfung</h2><div class="zeitlinie" role="img" aria-label="Zeitlinie über ${wochen.length} Wochen">` +
+      wochen.map((w) => `<span class="${klasse(w)} ${w.WocheID === p.Woche.WocheID ? "jetzt" : ""} ${w.EndDatum < heute ? "vorbei" : ""}" title="${esc(w.WocheID)} ab ${esc(kurzDatum(w.StartDatum))} · ${esc(w.Art)}"></span>`).join("") +
+      `<span class="pruefung" title="Prüfung">P</span></div>
+      <div class="legende"><span><i class="lern"></i>Lernwoche</span><span><i class="fw"></i>Ferienwoche (halb)</span><span><i class="ferien"></i>Ferien</span><span><i class="wdh"></i>Wiederholung</span><span><i class="jetzt"></i>jetzt (${esc(p.Woche.WocheID)})</span></div>`;
+  }
+  if (p.Plan.PruefungAb) { const tage = Math.ceil((datum(p.Plan.PruefungAb) - new Date()) / 86400000); if (tage >= 0) h += `<p class="leise">Noch ${tage} Tage bis zur ersten Prüfung am ${esc(kurzDatum(p.Plan.PruefungAb))}</p>`; }
+  h += nachhakenKasten();
+  // je Fach: Ampel, diese Woche, ganzes Schuljahr (Stand der Datenbank)
+  h += `<h2>Fächer</h2>`;
+  for (const f of [...p.Faecher.filter((x) => !x.Optional), ...p.Faecher.filter((x) => x.Optional)]) {
+    const fs = fortschritt(f), g = (p.Gesamt || []).find((x) => x.FachID === f.Fach), r = rueckstand(f);
+    h += `<div class="karte fach" style="--farbe:${esc(f.Farbe)}"><div class="zeile kopfzeile"><span class="fachname">${esc(f.Fach)}${f.Optional ? " · freiwillig" : ""}</span>${ampel(f)}</div>
+      <p class="leise">Diese Woche: ${fs.fertig} von ${fs.anzahl} Pflichtaufgaben fertig</p><div class="balken"><span style="width:${Math.round(fs.anteil * 100)}%"></span></div>` +
+      (g && g.Anzahl ? `<p class="leise">Schuljahr: ${Math.round(g.Fertig / g.Anzahl * 100)} % geschafft · bis zu dieser Woche geplant ${Math.round(g.BisJetzt / g.Anzahl * 100)} %</p><div class="balken jahr"><span style="width:${Math.round(g.Fertig / g.Anzahl * 100)}%"></span><b style="left:${Math.round(g.BisJetzt / g.Anzahl * 100)}%"></b></div>` : "") +
+      (r && r.anzahl ? `<details><summary class="leise">Was ist im Rückstand?</summary><ul class="versuche">` + [...r.frueher.map((x) => `${x.WocheID}: ${x.Titel}`), ...r.vergangen.map((a) => `diese Woche: ${a.Titel}`)].map((t) => `<li>${esc(t)}</li>`).join("") + `</ul></details>` : "") +
+      `<button class="knopf voll" data-a="fach" data-w="${esc(f.Fach)}">Zum Fach</button></div>`;
+  }
+  // was nicht sitzt
+  const wackelig = [];
+  for (const f of p.Faecher) for (const a of f.Aufgaben) { const m = eintraege().mat[a.MaterialID]; if (m && (m.sitzt === "unsicher" || m.sitzt === "nicht verstanden")) wackelig.push([f, a, m.sitzt]); }
+  h += `<h2>Unsicher oder nicht verstanden</h2>` + (wackelig.length ? `<ul class="liste">` + wackelig.map(([f, a, w]) => `<li>${sitztZeichen(w, 24)}<span><strong>${esc(f.Fach)}:</strong> ${esc(a.Titel)}<br><button class="link" data-a="fach" data-w="${esc(f.Fach)}">Zur Aufgabe</button></span></li>`).join("") + `</ul>` : `<p class="leise">Nichts markiert. Wenn etwas nicht sitzt: am Titel auf die Sanduhr tippen.</p>`);
+  h += `<p class="leise">Der Stand fürs Schuljahr kommt aus der Datenbank (Wochenpaket vom ${esc(String(p.Erstellt || "").slice(0, 10).split("-").reverse().join("."))}). Neu wird er, wenn deine Rückmeldung eingelesen ist.</p>`;
   return h;
 }
 
@@ -387,7 +622,7 @@ function seiteFach() {
       frei.map((a) => `<li><input type="checkbox" data-a="frei" data-id="${a.MaterialID}" ${x} ${e.frei[a.MaterialID] ? "checked" : ""} aria-label="erledigt"><span>${a.URL ? `<a href="${esc(a.URL)}" target="_blank" rel="noopener">${esc(a.Titel)}</a>` : esc(a.Titel)}<br><span class="meta">${esc([kurzQuelle(a.Quelle), a.Fundstelle, a.Minuten ? a.Minuten + " Min." : ""].filter(Boolean).join(" · "))}</span></span></li>`).join("") +
       songs.map((s) => `<li><span aria-hidden="true">♪</span><span><a href="https://www.youtube.com/results?search_query=${encodeURIComponent(s.Titel + " " + s.Interpret)}" target="_blank" rel="noopener">${esc(s.Titel)}</a> – ${esc(s.Interpret)}</span></li>`).join("") + `</ul></div>`;
   }
-  h += `<h3>Notiz zum Fach</h3>${text("notiz", e.notiz || "", "Fragen, Schwieriges, Ideen", x)}`;
+  h += `<h3>Notiz zum Fach</h3>${notizFeld("notiz", e.notiz, e.notizArt, "Fragen, Schwieriges, Ideen", x)}`;
   return h;
 }
 
@@ -433,27 +668,60 @@ function seiteMehr() {
       <li>${ikon("welt", 26)}${ikon("film", 26)}<span><strong>Öffnen:</strong> Webseite, Video, Hören, PDF oder Online-Übung.</span></li>
       <li>${ikon("notiz", 26)}<span><strong>Notiz</strong> zu dieser Aufgabe. Ein Punkt zeigt, dass schon eine da ist.</span></li>
       <li>${ikon("birne", 26)}<span><strong>Lerntechnik:</strong> wie du diese Aufgabe gut lernen kannst.</span></li>
+      <li><span class="fahne gemeldet">${ikon("fahne", 24)}</span><span><strong>Link melden,</strong> wenn ein Link nicht geht oder etwas nicht stimmt. Orange heißt: gemeldet.</span></li>
+      <li>${ikon("joker", 26)}<span><strong>Hilfe holen:</strong> Person wählen, Nachricht steht schon da. Blau angefragt, orange nachhaken, grün Termin, grau geklärt.</span></li>
+      <li>${ikon("uhr", 26)}<span><strong>Arbeitszeit</strong> eintragen, wenn du magst: von–bis oder Dauer. Zeigt „geplant · gebraucht“.</span></li>
+      <li>${ikon("mikro", 26)}<span><strong>Sprechen statt tippen</strong> bei Notizen. Der Text erscheint im Feld und du kannst ihn verbessern.</span></li>
+      <li><span class="ampel ampel-gruen"><i></i>im Plan</span><span><strong>Ampel:</strong> grün im Plan, gelb 1–3 im Rückstand, rot mehr als 3, blau voraus.</span></li>
       <li>${ikon("mond", 26)}<span>Oben rechts: hell oder dunkel.</span></li>
     </ul>
+    ${notizUebersicht()}
+    ${gemeldeteLinks()}
     <h3>Daten</h3>
     <p class="leise">Alles liegt nur auf diesem Gerät. Sichere es, bevor du den Browser leerst.</p>
     <div class="zeile"><button class="knopf" data-a="sichern">Alles sichern</button><button class="knopf" data-a="laden">Sicherung einlesen</button></div>
     <p class="leise">Schulplaner App ${APP_VERSION}</p>`;
 }
 
+// Alle Notizen aus allen geladenen Wochen, mit Filter nach Art, Ebene, Fach und Woche
+function alleNotizen() {
+  const l = [];
+  for (const [w, e] of Object.entries(Z.e)) {
+    const p = Z.pakete[w];
+    const titel = (id) => { for (const f of (p ? p.Faecher : [])) { const a = f.Aufgaben.find((x) => String(x.MaterialID) === String(id)); if (a) return [f.Fach, a.Titel]; } return ["", ""]; };
+    for (const [id, m] of Object.entries(e.mat || {})) if (m.notiz) { const [fach, t] = titel(id); l.push({ woche: w, ebene: "Aufgabe", fach, wo: t, art: m.notizArt, text: m.notiz, gesprochen: m.notizGesprochen }); }
+    for (const [tag, x] of Object.entries(e.tage || {})) if (x.notiz) l.push({ woche: w, ebene: "Tag", fach: "", wo: TAG_LANG[tag] || tag, art: x.art, text: x.notiz, gesprochen: x.gesprochen });
+    if (e.wocheNotiz) l.push({ woche: w, ebene: "Woche", fach: "", wo: "", art: e.wocheNotizArt, text: e.wocheNotiz, gesprochen: e.wocheNotizGesprochen });
+    for (const [fach, x] of Object.entries(e.fach || {})) if (x.notiz) l.push({ woche: w, ebene: "Fach", fach, wo: "", art: x.notizArt, text: x.notiz, gesprochen: x.notizGesprochen });
+  }
+  return l;
+}
+function notizUebersicht() {
+  const alle = alleNotizen();
+  if (!alle.length) return `<h3>Alle Notizen</h3><p class="leise">Noch keine Notizen.</p>`;
+  const nf = ansicht.nf || {}, werte = (k) => [...new Set(alle.map((n) => n[k]).filter(Boolean))].sort().map((v) => [v, v]);
+  const l = alle.filter((n) => (!nf.art || n.art === nf.art) && (!nf.ebene || n.ebene === nf.ebene) && (!nf.fach || n.fach === nf.fach) && (!nf.woche || n.woche === nf.woche));
+  return `<h3>Alle Notizen</h3><div class="zwei filter">${auswahl("nf-art", NOTIZ_ARTEN, nf.art, "jede Art")}${auswahl("nf-ebene", ["Aufgabe", "Tag", "Woche", "Fach"].map((x) => [x, x]), nf.ebene, "jede Ebene")}${auswahl("nf-fach", werte("fach"), nf.fach, "jedes Fach")}${auswahl("nf-woche", werte("woche"), nf.woche, "jede Woche")}</div>
+    <ul class="liste">` + l.map((n) => `<li><span><span class="leise">${esc([n.woche, n.ebene, n.fach, n.wo].filter(Boolean).join(" · "))}${n.art ? ` · <strong>${esc(n.art)}</strong>` : ""}${n.gesprochen ? " · gesprochen" : ""}</span><br>${esc(n.text)}</span></li>`).join("") + `</ul>` + (l.length ? "" : `<p class="leise">Keine Notiz passt zum Filter.</p>`);
+}
+function gemeldeteLinks() {
+  const p = paket(); if (!p) return "";
+  const l = []; for (const f of p.Faecher) for (const a of f.Aufgaben) { const m = eintraege().mat[a.MaterialID]; if (m && m.meldung) l.push([f, a, m.meldung]); }
+  return l.length ? `<h3>Gemeldete Links</h3><ul class="liste">` + l.map(([f, a, x]) => `<li><span><strong>${esc(f.Fach)}:</strong> ${esc(a.Titel)}<br><span class="leise">${esc(x.grund)}${x.text ? " · " + esc(x.text) : ""}</span></span></li>`).join("") + `</ul>` : "";
+}
 const ohnePaket = () => `<div class="karte"><div class="titel">Noch kein Wochenpaket</div><p>Lade die Datei für deine Woche. Du bekommst sie am Sonntag aus der Datenbank.</p><button class="knopf haupt voll" data-a="laden">Wochenpaket laden</button></div>`;
 
 // ---------------------------------------------------------------- Zeichnen
 const istDunkel = () => Z.theme === "dark" || (Z.theme !== "light" && !!window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
 const seiteTagAnsicht = () => (paket() ? `<button class="link" data-a="seite" data-w="woche">‹ Zur Woche</button>` + seiteTag(ansicht.tag, ansicht.tag === heuteTag()) : ohnePaket());
-const SEITEN = { heute: ["Heute", seiteHeute], woche: ["Woche", seiteWoche], sonntag: ["Sonntag", seiteSonntag], mehr: ["Mehr", seiteMehr], fach: ["Fach", seiteFach], tag: ["Tag", seiteTagAnsicht] };
+const SEITEN = { heute: ["Heute", seiteHeute], woche: ["Woche", seiteWoche], fortschritt: ["Fortschritt", seiteFortschritt], sonntag: ["Sonntag", seiteSonntag], mehr: ["Mehr", seiteMehr], fach: ["Fach", seiteFach], tag: ["Tag", seiteTagAnsicht] };
 function zeichnen(obenBleiben) {
   const y = window.scrollY, p = paket();
   document.documentElement.dataset.theme = Z.theme && Z.theme !== "system" ? Z.theme : "";
   if (!document.documentElement.dataset.theme) delete document.documentElement.dataset.theme;
   document.getElementById("kopf").innerHTML = `<button class="thema" data-a="theme-wechsel" aria-label="${istDunkel() ? "Hell" : "Dunkel"} darstellen">${ikon(istDunkel() ? "sonne" : "mond", 22)}</button><h1>${ansicht.seite === "fach" ? esc(ansicht.fach) : ansicht.seite === "tag" ? esc(tagDatum(ansicht.tag)) : SEITEN[ansicht.seite][0]}</h1><p>${p ? `${esc(p.Plan.Lernende)} · ${esc(p.Woche.WocheID)} · ${kurzDatum(p.Woche.StartDatum)} bis ${kurzDatum(p.Woche.EndDatum)}${p.Umgebung !== "Produktion" ? " · " + esc(p.Umgebung.toUpperCase()) : ""}` : "Schulplaner"}</p>`;
   document.getElementById("inhalt").innerHTML = SEITEN[ansicht.seite][1]();
-  document.getElementById("nav").innerHTML = ["heute", "woche", "sonntag", "mehr"].map((s) => `<button data-a="seite" data-w="${s}" ${ansicht.seite === s || (s === "woche" && (ansicht.seite === "fach" || ansicht.seite === "tag")) ? 'aria-current="page"' : ""}>${SEITEN[s][0]}</button>`).join("");
+  document.getElementById("nav").innerHTML = ["heute", "woche", "fortschritt", "sonntag", "mehr"].map((s) => `<button data-a="seite" data-w="${s}" ${ansicht.seite === s || (s === "woche" && (ansicht.seite === "fach" || ansicht.seite === "tag")) ? 'aria-current="page"' : ""}>${SEITEN[s][0]}</button>`).join("");
   window.scrollTo(0, obenBleiben ? y : 0);
 }
 
@@ -474,8 +742,62 @@ function handle(el, wert) {
     case "notiz-auf": ansicht.notiz = ansicht.notiz === Number(wert) ? null : Number(wert); zeichnen(true); return;
     case "tipp-auf": ansicht.tipp = ansicht.tipp === Number(wert) ? null : Number(wert); zeichnen(true); return;
     case "sitzt": eMat(d.id).sitzt = wert || null; ansicht.leiste = null; break;
-    case "m-notiz": eMat(d.id).notiz = wert; neu = false; break;
+    case "m-notiz": eMat(d.id).notiz = wert; if (d.gesprochen) eMat(d.id).notizGesprochen = true; neu = false; break;
+    case "m-notiz-art": eMat(d.id).notizArt = wert || null; neu = false; break;
+    case "notiz-art": eFach(d.fach).notizArt = wert || null; neu = false; break;
+    case "tag-notiz-art": tagNotiz(d.tag).art = wert || null; neu = false; break;
+    case "woche-notiz": eintraege().wocheNotiz = wert; if (d.gesprochen) eintraege().wocheNotizGesprochen = true; neu = false; break;
+    case "woche-notiz-art": eintraege().wocheNotizArt = wert || null; neu = false; break;
+    case "sprechen": sprechen(el); return;
+    case "nf-art": case "nf-ebene": case "nf-fach": case "nf-woche": ansicht.nf = Object.assign(ansicht.nf || {}, { [a.slice(3)]: wert || null }); zeichnen(true); return;
+    case "uhr-auf": ansicht.uhr = ansicht.uhr === Number(wert) ? null : Number(wert); zeichnen(true); return;
+    case "uhr-art": ansicht.uhrArt = wert; zeichnen(true); return;
+    case "zeit-eintragen": {
+      const box = el.closest(".aufklapp"), q = (k) => box.querySelector(k), m = eMat(d.id), tag = q(".z-tag").value;
+      let min = 0, von = null, bis = null;
+      if (q(".z-von")) {
+        von = q(".z-von").value; bis = q(".z-bis").value;
+        if (!von || !bis) { alert("Bitte von und bis eintragen."); return; }
+        min = (Number(bis.slice(0, 2)) * 60 + Number(bis.slice(3))) - (Number(von.slice(0, 2)) * 60 + Number(von.slice(3)));
+        if (min <= 0) { alert("bis muss nach von liegen."); return; }
+      } else min = Number(q(".z-std").value || 0) * 60 + Number(q(".z-min").value || 0);
+      if (!min) return;
+      if (!m.zeiten) m.zeiten = [];
+      m.zeiten.push({ tag, von, bis, min, zeitraum: von ? zeitraumAus(von) : null });
+      break;
+    }
+    case "zeit-weg": eMat(d.id).zeiten.splice(Number(d.i), 1); break;
     case "theme-wechsel": Z.theme = istDunkel() ? "light" : "dark"; break;
+    case "bahn": Z.bahn = wert === "1"; break;
+    case "tag-notiz": tagNotiz(d.tag).notiz = wert; if (d.gesprochen) tagNotiz(d.tag).gesprochen = true; neu = false; break;
+    case "pomo-start":
+      if (pomo.ende) { pomo.rest = (pomo.ende - Date.now()) / 1000; pomo.ende = null; } else pomo.ende = Date.now() + pomo.rest * 1000;
+      el.textContent = pomo.ende ? "Anhalten" : "Start"; return;
+    case "pomo-reset": pomo = { phase: "lernen", rest: POMO.lernen, ende: null }; zeichnen(true); return;
+    case "melden-auf": ansicht.melden = ansicht.melden === Number(wert) ? null : Number(wert); zeichnen(true); return;
+    case "melden": { const m = eMat(d.id); m.meldung = { grund: wert, text: (m.meldung && m.meldung.text) || "", am: new Date().toISOString() }; break; }
+    case "melden-text": if (eMat(d.id).meldung) eMat(d.id).meldung.text = wert; neu = false; break;
+    case "melden-weg": delete eMat(d.id).meldung; break;
+    case "hilfe-auf": ansicht.hilfe = ansicht.hilfe === Number(wert) ? null : Number(wert); zeichnen(true); return;
+    case "hilfe-person": {
+      const f = paket().Faecher.find((x) => x.Aufgaben.some((y) => String(y.MaterialID) === String(d.id))), a = f && f.Aufgaben.find((y) => String(y.MaterialID) === String(d.id));
+      eMat(d.id).hilfeEntwurf = wert ? { person: wert, text: hilfeText(f, a, wert) } : null; break;
+    }
+    case "hilfe-text": if (eMat(d.id).hilfeEntwurf) eMat(d.id).hilfeEntwurf.text = wert; neu = false; break;
+    case "hilfe-weg": case "hilfe-signal": {
+      const m = eMat(d.id), e = m.hilfeEntwurf || {};
+      if (!m.hilfe) m.hilfe = [];
+      m.hilfe.push({ person: e.person, weg: a === "hilfe-signal" ? "Signal" : wert, am: new Date().toISOString(), ergebnis: null, termin: null });
+      if (a === "hilfe-signal") {                          // Signal kann keinen Text vorbelegen: Text kopieren, dann Signal öffnen
+        try { navigator.clipboard.writeText(e.text || ""); } catch (x) { /* ohne Zwischenablage */ }
+        alert("Der Text ist kopiert. In Signal einfach einfügen.");
+        window.open(wert, "_blank", "noopener");
+      }
+      speichern(); setTimeout(() => zeichnen(true), 400); return;   // Link erst öffnen lassen, dann neu zeichnen
+    }
+    case "hilfe-kopieren": { const e = eMat(d.id).hilfeEntwurf || {}; try { navigator.clipboard.writeText(e.text || ""); el.textContent = "kopiert"; } catch (x) { /* ohne Zwischenablage */ } return; }
+    case "hilfe-ergebnis": { const l = eMat(d.id).hilfe || []; if (l.length) l[l.length - 1].ergebnis = wert; break; }
+    case "hilfe-termin": { const l = eMat(d.id).hilfe || []; if (l.length) l[l.length - 1].termin = wert; break; }
     case "vt-was": eVt(d.id).was = wert; neu = false; break;
     case "woche": if (wert) Z.woche = wert; break;
     case "stand": eMat(d.id).stand = Number(wert); ansicht.leiste = null; break;
@@ -486,7 +808,7 @@ function handle(el, wert) {
     case "vorhersage": case "ergebnis": case "max": eFach(d.fach)[a] = zahl(wert); neu = false; break;
     case "einstufung": case "groesse": eFach(d.fach)[a] = eFach(d.fach)[a] === wert ? null : wert; break;
     case "zeig": eFach(d.fach).zeig = wert; break;
-    case "zeigEigen": case "lasseWeg": case "nehmeDazu": case "notiz": eFach(d.fach)[a] = wert; neu = false; break;
+    case "zeigEigen": case "lasseWeg": case "nehmeDazu": case "notiz": eFach(d.fach)[a] = wert; if (a === "notiz" && d.gesprochen) eFach(d.fach).notizGesprochen = true; neu = false; break;
     case "u-neu": eFach(d.fach).ueben.push({ was: "", wie: "", tag: "", stand: 0 }); break;
     case "u-weg": eFach(d.fach).ueben.splice(Number(d.i), 1); break;
     case "u-was": eFach(d.fach).ueben[d.i].was = wert; neu = false; break;
@@ -506,7 +828,7 @@ function handle(el, wert) {
   if (neu) zeichnen(true);
 }
 document.addEventListener("click", (ev) => {
-  const el = ev.target.closest("button[data-a]");
+  const el = ev.target.closest("button[data-a], a[data-a]");
   if (el) handle(el, el.dataset.w);
 });
 document.addEventListener("change", (ev) => {
@@ -535,14 +857,19 @@ function rueckmeldung() {
   const p = paket(), e = eintraege();
   return {
     Art: "Rueckmeldung", AppVersion: APP_VERSION, Erstellt: new Date().toISOString(), PlanID: p.Plan.PlanID, Lernende: p.Plan.Lernende, Woche: p.Woche.WocheID,
-    Material: p.Faecher.flatMap((f) => f.Aufgaben.map((a) => ({ a, m: e.mat[a.MaterialID], frei: (e.fach[f.Fach] || {}).frei })).filter((x) => (x.m && (x.m.stand || x.m.tag || x.m.weg || x.m.sitzt || x.m.notiz)) || (x.frei && x.frei[x.a.MaterialID])).map((x) => ({
+    Material: p.Faecher.flatMap((f) => f.Aufgaben.map((a) => ({ a, m: e.mat[a.MaterialID], frei: (e.fach[f.Fach] || {}).frei })).filter((x) => (x.m && (x.m.stand || x.m.tag || x.m.weg || x.m.sitzt || x.m.notiz || x.m.meldung || (x.m.hilfe && x.m.hilfe.length) || summeZeit(x.m))) || (x.frei && x.frei[x.a.MaterialID])).map((x) => ({
       MaterialID: x.a.MaterialID, FortschrittProzent: x.frei && x.frei[x.a.MaterialID] ? 100 : ((x.m && x.m.stand) || 0) * 25, Tag: (x.m && x.m.tag) || null, Zeitraum: (x.m && ZEITEN[x.m.zeit]) || null, Entscheidung: x.m && x.m.weg ? "gestrichen" : "bleibt",
-      Einschaetzung: (x.m && x.m.sitzt) || null, Notiz: (x.m && x.m.notiz) || null }))),
+      Einschaetzung: (x.m && x.m.sitzt) || null, Notiz: (x.m && x.m.notiz) || null, NotizArt: (x.m && x.m.notizArt) || null, NotizGesprochen: !!(x.m && x.m.notizGesprochen),
+      MinutenIst: x.m && summeZeit(x.m) ? summeZeit(x.m) : null,
+      LinkMeldung: x.m && x.m.meldung ? { Grund: x.m.meldung.grund, Text: x.m.meldung.text || null, Am: x.m.meldung.am } : null,
+      Hilfe: ((x.m && x.m.hilfe) || []).map((v) => ({ Person: v.person, Weg: v.weg, Am: v.am, Ergebnis: v.ergebnis, Termin: v.termin })) }))),
+    TagNotizen: Object.entries(e.tage || {}).filter(([, v]) => v.notiz).map(([t, v]) => ({ Tag: t, Notiz: v.notiz, Art: v.art || null, Gesprochen: !!v.gesprochen })),
+    WochenNotiz: e.wocheNotiz ? { Notiz: e.wocheNotiz, Art: e.wocheNotizArt || null, Gesprochen: !!e.wocheNotizGesprochen } : null,
     Faecher: p.Faecher.map((f) => {
       const x = e.fach[f.Fach] || { ueben: [] }, ideen = vorschlaege(f, "Zeigen");
       return { Fach: f.Fach, Paket: f.Paket, Vorhersage: x.vorhersage ?? null, Ergebnis: x.ergebnis ?? null, Maximal: x.max ?? null, StartCheck: x.einstufung || null,
         ZeigIdee: x.zeig === "eigen" ? x.zeigEigen || "eigene Idee" : (ideen[x.zeig] ? ideen[x.zeig].Vorschlagstext : null), Zeigform: x.zeig !== "eigen" && ideen[x.zeig] ? ideen[x.zeig].Zeigform : null,
-        Groesse: x.groesse || null, LasseWeg: x.lasseWeg || null, NehmeDazu: x.nehmeDazu || null, Notiz: x.notiz || null,
+        Groesse: x.groesse || null, LasseWeg: x.lasseWeg || null, NehmeDazu: x.nehmeDazu || null, Notiz: x.notiz || null, NotizArt: x.notizArt || null, NotizGesprochen: !!x.notizGesprochen,
         Ueben: (x.ueben || []).map((u) => ({ Was: u.was, Wie: u.wie, Tag: u.tag, FortschrittProzent: (u.stand || 0) * 25 })) };
     }),
     // Ursachen als Text, zum Beispiel "Methode, Fokus, Sonstiges: zu müde"
