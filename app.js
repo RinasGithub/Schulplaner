@@ -1,7 +1,7 @@
 /* Schulplaner – Handy-App. Liest Wochenpakete (JSON aus der Datenbank), speichert alle Eintragungen
    nur auf diesem Gerät (localStorage) und gibt sie als Rückmeldung-Datei zurück. Kein Server. */
 "use strict";
-const APP_VERSION = "0.4.4";
+const APP_VERSION = "0.5.0";
 const SCHLUESSEL = "schulplaner";
 const TAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const ZEITEN = { B: "Bahnfahrt", F: "Vormittag", N: "Nachmittag", A: "Abend", W: "Wochenende" };
@@ -235,7 +235,8 @@ function seiteWoche() {
       return vs.length ? `<li><button class="link tagzeile" data-a="tag" data-w="${t}"><strong>${t}</strong> · ${vs.length} Einträge · ${Math.round(min / 6) / 10} Std.<br><span class="leise">${esc(fae)}</span></button></li>` : "";
     }).join("") + `</ul></div><h2>Nach Fächern</h2>`;
   }
-  for (const f of p.Faecher) {
+  const freiwillig = p.Faecher.filter((f) => f.Optional);
+  for (const f of p.Faecher.filter((x) => !x.Optional)) {
     const fs = fortschritt(f), e = eFach(f.Fach), t = f.Termin;
     h += `<div class="karte fach" style="--farbe:${esc(f.Farbe)}">
       <span class="fachname">${esc(f.Fach)}</span>
@@ -247,6 +248,15 @@ function seiteWoche() {
       <button class="knopf haupt voll" data-a="fach" data-w="${esc(f.Fach)}">Öffnen</button>
     </div>`;
   }
+  // Freiwillige Fächer (Physik, Chemie): Thema der Woche sehen, alles darf, nichts muss
+  if (freiwillig.length) h += `<h2>Freiwillige Fächer</h2><p class="leise">Du entscheidest, ob und wie viel du machst. Vorschlag: die NaWi-Stunden am Montag.</p>` + freiwillig.map((f) => {
+    const fs = fortschritt(f);
+    return `<div class="karte fach" style="--farbe:${esc(f.Farbe)}"><span class="fachname">${esc(f.Fach)} · freiwillig</span>
+      <div class="titel">${esc(f.Thema)}</div>
+      <div class="balken"><span style="width:${Math.round(fs.anteil * 100)}%"></span></div>
+      <p class="leise">${fs.fertig} von ${fs.anzahl} Aufgaben fertig</p>
+      <button class="knopf voll" data-a="fach" data-w="${esc(f.Fach)}">Ansehen</button></div>`;
+  }).join("");
   return h;
 }
 
@@ -274,7 +284,8 @@ function seiteFach() {
   const e = eFach(f.Fach), x = `data-fach="${esc(f.Fach)}"`, t = f.Termin;
   let h = `<button class="link" data-a="seite" data-w="woche">‹ Zur Woche</button>
     <div class="karte fach" style="--farbe:${esc(f.Farbe)}">
-      <span class="fachname">${esc(f.Fach)}</span><div class="titel">${esc(f.Thema)}</div>
+      <span class="fachname">${esc(f.Fach)}${f.Optional ? " · freiwillig" : ""}</span><div class="titel">${esc(f.Thema)}</div>
+      ${f.Optional ? `<p class="leise">Ein freiwilliges Fach: Du entscheidest, ob und wie viel du machst.</p>` : ""}
       <p><strong>Ziel:</strong> ${esc(f.Lernziel)}</p>
       <p class="leise">Paket: ${esc(f.Paket || "–")}${f.PaketErsteWoche ? ` (${esc(f.PaketErsteWoche)}${f.PaketLetzteWoche !== f.PaketErsteWoche ? " bis " + esc(f.PaketLetzteWoche) : ""})` : ""}${f.PaketSpaetestensBis ? " · spätestens bis " + kurzDatum(f.PaketSpaetestensBis) : ""}</p>
       <p><strong>Zeig-Termin:</strong> ${zeigTermin(f)}</p>
