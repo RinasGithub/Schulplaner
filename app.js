@@ -1,7 +1,7 @@
 /* Schulplaner – Handy-App. Liest Wochenpakete (JSON aus der Datenbank), speichert alle Eintragungen
    nur auf diesem Gerät (localStorage) und gibt sie als Rückmeldung-Datei zurück. Kein Server. */
 "use strict";
-const APP_VERSION = "0.8.1";
+const APP_VERSION = "0.10.0";
 const SCHLUESSEL = "schulplaner";
 const TAGE = ["Mo", "Di", "Mi", "Do", "Fr", "Sa", "So"];
 const ZEITEN = { B: "Bahnfahrt", F: "Vormittag", N: "Nachmittag", A: "Abend", W: "Wochenende" };
@@ -127,6 +127,7 @@ const IKON = {
   joker: '<rect x="5" y="2.5" width="14" height="19" rx="2.5"/><path d="M9.8 9.3a2.3 2.3 0 1 1 3.2 2.1c-.6.3-1 .8-1 1.4v.6M12 16.8h.01"/>',
   uhr: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/>',
   mikro: '<rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5 11a7 7 0 0 0 14 0M12 18v3"/>',
+  pfeil: '<path d="M19 12H5M11 6l-6 6 6 6"/>',
   kopieren: '<rect x="8" y="8" width="12" height="13" rx="2"/><path d="M16 8V5a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v11a2 2 0 0 0 2 2h2"/>',
 };
 const ikon = (name, gross) => svg(IKON[name], gross);
@@ -225,7 +226,28 @@ function meldenFeld(a, m, id) {
     (m.meldung ? feld("melden-text", m.meldung.text || "", "Optional ein Satz dazu", id) + `<p class="leise">Gemeldet. Die Meldung geht mit der Rückmeldung an Mama und Papa.</p><button class="link" data-a="melden-weg" ${id}>Meldung zurücknehmen</button>` : `<p class="leise">Tipp auf einen Grund. Die Meldung geht mit der Rückmeldung an Mama und Papa.</p>`) + `</div>`;
 }
 // ---- Hilfe holen (Joker-Karte): Person wählen, Text entsteht von selbst, Weg wählen, danach „Wie ist es gelaufen?“
-const kontakte = () => (paket() && paket().Kontakte) || [];
+// Kontakte aus dem Wochenpaket; was Emil in der App ändert oder neu anlegt, liegt in Z.kontakte und gilt für alle Wochen
+const KONTAKT_FELDER = ["Rolle", "Telefon", "Email", "WhatsApp", "Signal", "Bevorzugt"];
+function kontakte() {
+  const l = ((paket() && paket().Kontakte) || []).map((k) => Object.assign({}, k, (Z.kontakte || {})[k.PersonName] || {}));
+  for (const [name, k] of Object.entries(Z.kontakte || {})) if (!l.some((x) => x.PersonName === name)) l.push(Object.assign({ PersonName: name }, k));
+  return l;
+}
+function kontaktBearbeiten(k) {
+  const x = `data-name="${esc(k.PersonName)}"`, f = (feld, platz, typ = "text") => `<label>${platz}<input type="${typ}" data-a="k-feld" data-feld="${feld}" ${x} value="${esc(k[feld] || "")}"></label>`;
+  return `<div class="aufklapp">${f("Rolle", "Rolle (zum Beispiel Opa, Nachhilfe)")}${f("Telefon", "Telefon (Handy)", "tel")}${f("Email", "E-Mail", "email")}
+    <label class="radio"><input type="checkbox" data-a="k-feld" data-feld="WhatsApp" ${x} ${k.WhatsApp ? "checked" : ""}><span>nutzt WhatsApp</span></label>
+    <label class="radio"><input type="checkbox" data-a="k-feld" data-feld="Signal" ${x} ${k.Signal ? "checked" : ""}><span>nutzt Signal</span></label>
+    <label>bevorzugter Weg${auswahl("k-feld", ["Anrufen", "SMS", "WhatsApp", "Signal", "E-Mail", "persönlich"].map((w) => [w, w]), k.Bevorzugt, "egal", `data-feld="Bevorzugt" ${x}`)}</label>
+    <p class="leise">Wird mit der Rückmeldung an den PC geschickt. Dort werden nur fehlende Angaben ergänzt.</p></div>`;
+}
+function seiteKontakte() {
+  return `<h3>Meine Kontakte</h3><p class="leise">Für „Hilfe holen“ und für deine Zeig-Termine.</p><ul class="liste">` + kontakte().map((k) => {
+    const wege = [k.Telefon ? "Telefon" : "", k.WhatsApp ? "WhatsApp" : "", k.Signal ? "Signal" : "", k.Email ? "E-Mail" : ""].filter(Boolean).join(", ") || "nur persönlich";
+    return `<li><span style="flex:1"><strong>${esc(k.PersonName)}</strong>${k.Rolle ? ` · <span class="leise">${esc(k.Rolle.split(",")[0])}</span>` : ""}<br><span class="leise">${esc(wege)}${(Z.kontakte || {})[k.PersonName] ? " · in der App geändert" : ""}</span>
+      ${ansicht.kontakt === k.PersonName ? kontaktBearbeiten(k) : ""}</span><button class="chip" data-a="k-auf" data-w="${esc(k.PersonName)}">${ansicht.kontakt === k.PersonName ? "fertig" : "bearbeiten"}</button></li>`;
+  }).join("") + `</ul><button class="knopf voll" data-a="k-neu">+ Neue Person</button>`;
+}
 const HILFE_STATUS = { "": "angefragt", Termin: "Termin", "nicht erreicht": "nachhaken", "geklärt": "geklärt" };
 function hilfeStatus(m) { const l = m.hilfe || []; if (!l.length) return null; return HILFE_STATUS[l[l.length - 1].ergebnis || ""]; }
 // Telefonnummer international: 0171 … wird +49171…
@@ -287,7 +309,7 @@ function ikonLeiste(f, a, m, id, mitWeg) {
   if (ansicht.uhr === a.MaterialID) h += uhrFeld(a, m, id);
   if (ansicht.melden === a.MaterialID) h += meldenFeld(a, m, id);
   if (ansicht.hilfe === a.MaterialID) h += hilfeFeld(f, a, m, id);
-  if (ansicht.tipp === a.MaterialID) h += `<div class="aufklapp">` + tech.map((t) => `<p><strong>${esc(t.Technik)}</strong><br>${esc(t.KurzErklaert || "")}</p>${t.SoGehts ? `<details><summary>So geht's</summary><p class="sogehts">${esc(t.SoGehts)}</p></details>` : ""}`).join("") + `</div>`;
+  if (ansicht.tipp === a.MaterialID) h += `<div class="aufklapp">` + tech.map((t) => `<p><strong>${esc(t.Technik)}</strong><br>${esc(t.KurzErklaert || "")}</p>${t.SoGehts ? `<details><summary>So geht's</summary><p class="sogehts">${esc(t.SoGehts)}</p></details>` : ""}${(paket().Techniken || []).length ? `<button class="link" data-a="technik-seite" data-w="${esc(t.TechnikID)}">Mehr zu dieser Technik</button>` : ""}`).join("") + `</div>`;
   return h;
 }
 
@@ -311,7 +333,7 @@ function rueckstand(f) {
 function ampel(f) {
   const r = rueckstand(f);
   if (!r) return "";
-  const voraus = !r.anzahl && f.Aufgaben.some((a) => /vorgezogen aus/.test(a.Titel) && eMat(a.MaterialID).stand === 4);
+  const voraus = !r.anzahl && (f.Aufgaben.some((a) => /vorgezogen aus/.test(a.Titel) && eMat(a.MaterialID).stand === 4) || kommend(f.Fach).some((k) => vorgezogen()[k.MaterialID] && eMat(k.MaterialID).stand === 4));
   const [farbe, text] = r.anzahl > 3 ? ["rot", `${r.anzahl} im Rückstand`] : r.anzahl ? ["gelb", `${r.anzahl} im Rückstand`] : voraus ? ["blau", "voraus"] : ["gruen", "im Plan"];
   return `<span class="ampel ampel-${farbe}"><i aria-hidden="true"></i>${text}</span>`;
 }
@@ -332,6 +354,71 @@ function offenKasten() {
   return h;
 }
 
+// ---------------------------------------------------------------- Quelle antippbar, Hinweis bei Lücken
+// Die Quelle in der Meta-Zeile wird zum Knopf: springt zur Bücherliste dieses Fachs, das Buch ist hervorgehoben
+function quelleLink(f, a, meta) {
+  const q = kurzQuelle(a.Quelle), t = esc(meta);
+  return q && (paket().Quellen || []).length ? t.replace(esc(q), `<button class="quelle" data-a="buch" data-w="${esc(f.Fach)}" data-q="${esc(q)}">${esc(q)}</button>`) : t;
+}
+// Hinweis bei Lücken: nur, was Emil weiterhilft. Das Feld Hinweis enthält auch interne Prüfnotizen, die zeigen wir nicht.
+function lueckeHinweis(a) {
+  const h = a.Hinweis || "";
+  if (!a.URL && a.Fundstelle !== undefined && !/\d/.test(a.Fundstelle || "")) return `<p class="luecke"><strong>Seitenzahl fehlt:</strong> im Inhaltsverzeichnis nach dem Thema suchen oder Mama oder Papa fragen.</p>`;
+  if (/nachschauen|Abweichung/i.test(h)) return `<p class="luecke"><strong>Seitenzahl ungefähr:</strong> Wenn es nicht passt, ein bis zwei Seiten davor oder danach nachschauen.</p>`;
+  if (/fehlt|eintragen|unvollständig/i.test(h)) return `<p class="luecke"><strong>Angabe unvollständig:</strong> Frag Mama oder Papa, wo genau das steht.</p>`;
+  return "";
+}
+// ---- Vorziehen: Pflichtaufgaben der nächsten zwei Wochen (Wochenpaket.Kommend) in diese Woche holen
+const vorgezogen = () => { const e = eintraege(); if (!e.vorgezogen) e.vorgezogen = {}; return e.vorgezogen; };
+const kommend = (fach) => ((paket() && paket().Kommend) || []).filter((a) => a.FachID === fach);
+const alsAufgabe = (k) => Object.assign({}, k, { KernVertiefung: "Kern", Titel: `${k.Titel} (vorgezogen aus ${k.WocheID})` });
+function vorziehenBereich(f) {
+  const l = kommend(f.Fach), geholt = l.filter((k) => vorgezogen()[k.MaterialID]);
+  let h = "";
+  if (geholt.length) h += `<h3>Vorgezogen aus kommenden Wochen</h3>` + geholt.map((k) => aufgabeKarte(f, alsAufgabe(k), false) + `<button class="link" data-a="zurueck-legen" data-w="${k.MaterialID}">zurück nach ${esc(k.WocheID)} legen</button>`).join("");
+  const offen = l.filter((k) => !vorgezogen()[k.MaterialID]);
+  if (offen.length) h += `<details class="kommend"><summary>Aus kommenden Wochen vorziehen (${offen.length})</summary><p class="leise">Du bist schneller? Hol dir eine Aufgabe in diese Woche und plane einen Tag dafür.</p>` +
+    offen.map((k) => `<div class="karte klein"><div class="kartenkopf"><div class="kopftext"><div class="titel">${esc(k.Titel)}</div><div class="meta">${esc(k.WocheID)} · ${esc([kurzQuelle(k.Quelle), k.Fundstelle, k.Minuten ? k.Minuten + " Min." : ""].filter(Boolean).join(" · "))}</div></div>
+      <button class="ikon" data-a="vorziehen" data-w="${k.MaterialID}" aria-label="In diese Woche holen" title="In diese Woche holen">${ikon("pfeil")}</button></div></div>`).join("") + `</details>`;
+  return h;
+}
+
+// ---------------------------------------------------------------- Lerntechniken und Bücher
+const TECH_KATEGORIEN = ["Erarbeiten", "Üben und Prüfen", "Merken", "Konzentration und Organisation"];
+function seiteTechniken() {
+  const p = paket(), alle = (p && p.Techniken) || [];
+  if (!alle.length) return `<p class="leise">Die Lerntechniken kommen mit dem nächsten Wochenpaket.</p>`;
+  const kat = ansicht.techKat || "", l = alle.filter((t) => !kat || t.Kategorie === kat);
+  return `<button class="link" data-a="seite" data-w="mehr">‹ Zurück</button>` + chips("tech-kat", [["", "alle"], ...TECH_KATEGORIEN.map((k) => [k, k])], kat) +
+    l.map((t) => {
+      const auf = ansicht.technik === t.TechnikID;
+      let h = `<div class="karte"><div class="kartenkopf"><div class="kopftext"><div class="titel">${esc(t.Technik)}</div><div class="meta">${esc(t.Kategorie || "")}</div></div>
+        <button class="chip" data-a="technik" data-w="${esc(t.TechnikID)}">${auf ? "zu" : "mehr"}</button></div><p>${esc(t.KurzErklaert || "")}</p>`;
+      if (auf) {
+        if (t.SoGehts) h += `<h3>So geht's</h3><p class="sogehts">${esc(t.SoGehts)}</p>`;
+        if (t.WarumEsHilft) h += `<h3>Warum es hilft</h3><p>${esc(t.WarumEsHilft)}</p>`;
+        if (t.Vorlage) h += `<h3>Vorlage</h3><p>${esc(t.Vorlage)}</p>`;
+        if (t.Apps) h += `<h3>Apps</h3><p>${esc(t.Apps)}</p>`;
+        if ((t.Links || []).length) h += `<h3>Zum Weiterlesen und Ansehen</h3><ul class="liste">` + t.Links.map((x) => `<li><span><a href="${esc(x.Link)}" target="_blank" rel="noopener">${esc(x.Titel || x.Link)}</a><br><span class="leise">${esc([x.Typ, x.Anbieter, x.Hinweis].filter(Boolean).join(" · "))}</span></span></li>`).join("") + `</ul>`;
+        if ((t.Vorkommen || []).length) h += `<h3>Kommt in deinen Plänen vor</h3><div class="chips">` + t.Vorkommen.map((v) => Z.pakete[v.WocheID] ? `<button class="chip" data-a="springe" data-w="${esc(v.WocheID)}" data-fach="${esc(v.FachID)}">${esc(v.FachID)} ${esc(v.WocheID)}</button>` : `<span class="chip stumm">${esc(v.FachID)} ${esc(v.WocheID)}</span>`).join("") + `</div>`;
+      }
+      return h + `</div>`;
+    }).join("");
+}
+const STATUS_KLASSE = (s) => (/angekommen|vorhanden|online/i.test(s || "") ? "gut" : /bestellt/i.test(s || "") ? "bald" : "offen");
+function seiteBuecher() {
+  const p = paket(), alle = (p && p.Quellen) || [];
+  if (!alle.length) return `<p class="leise">Die Bücherliste kommt mit dem nächsten Wochenpaket.</p>`;
+  const fach = ansicht.buchFach || "", q = (ansicht.buchQ || "").toLowerCase().split(/\s+/)[0];
+  const faecher = [...new Set(alle.map((x) => x.FachID))];
+  return `<button class="link" data-a="seite" data-w="mehr">‹ Zurück</button>` + chips("buch-fach", [["", "alle"], ...faecher.map((f) => [f, f])], fach) +
+    alle.filter((x) => !fach || x.FachID === fach).map((x) => {
+      const treffer = q && ((x.Titel || "") + " " + (x.Verlag || "")).toLowerCase().includes(q);
+      return `<div class="karte ${treffer ? "treffer" : ""}"><div class="kartenkopf"><div class="kopftext"><span class="fachname">${esc(x.FachID)} · ${esc(x.Art || "")}</span><div class="titel">${esc(x.Titel)}</div><div class="meta">${esc(x.Verlag || "")}</div></div>
+        <span class="status-buch ${STATUS_KLASSE(x.Status)}">${esc(x.Status || "")}</span></div>${x.Rolle ? `<p class="leise">${esc(x.Rolle)}</p>` : ""}${x.Link ? `<p><a href="${esc(x.Link)}" target="_blank" rel="noopener">Link öffnen</a></p>` : ""}</div>`;
+    }).join("");
+}
+
 // ---------------------------------------------------------------- Bausteine
 const chips = (aktion, werte, aktiv, extra = "") => `<div class="chips" role="group">` + werte.map((w, i) => {
   const [wert, text] = Array.isArray(w) ? w : [i, w];
@@ -349,8 +436,8 @@ function aufgabeKarte(f, a, mitFach) {
   const meta = [kurzQuelle(a.Quelle), a.Fundstelle, a.Minuten ? a.Minuten + " Min." : "bei Bedarf"].filter(Boolean).join(" · ");
   return `<div class="karte ${m.stand === 4 ? "fertig" : ""} ${m.weg ? "weg" : ""}" style="--farbe:${esc(f.Farbe)}">
     ${mitFach ? `<span class="fachname"><i class="punkt"></i>${esc(f.Fach)}</span>` : ""}
-    ${kartenKopf(`<div class="titel">${esc(a.Titel)}</div><div class="meta">${artZeichen(a)} · ${esc(meta)}</div>`, "stand", m.stand || 0, id, m.sitzt || "")}
-    <p>${esc(a.Anweisung)}</p>
+    ${kartenKopf(`<div class="titel">${esc(a.Titel)}</div><div class="meta">${artZeichen(a)} · ${quelleLink(f, a, meta)}</div>`, "stand", m.stand || 0, id, m.sitzt || "")}
+    <p>${esc(a.Anweisung)}</p>${lueckeHinweis(a)}
     ${m.weg ? `<p class="leise">Lasse ich weg.</p>` : planZeile(a, m, id)}
     ${ikonLeiste(f, a, m, id, true)}
   </div>`;
@@ -367,8 +454,8 @@ function vtKarte(v) {
     const m = eMat(a.MaterialID), id = `data-id="${a.MaterialID}"`;
     const meta = [kurzQuelle(a.Quelle), a.Fundstelle, a.Minuten ? "insgesamt " + a.Minuten + " Min." : ""].filter(Boolean).join(" · ");
     return `<div class="karte fach ${m.stand === 4 ? "fertig" : ""} ${m.weg ? "weg" : ""}" style="--farbe:${esc(f.Farbe)}">${kopf}
-      ${kartenKopf(`<div class="titel">${esc(a.Titel)}</div><div class="meta">${artZeichen(a)} · ${esc(meta)}</div>`, "stand", m.stand || 0, id, m.sitzt || "")}
-      <p>${esc(a.Anweisung)}</p>${m.weg ? `<p class="leise">Lasse ich weg.</p>` : ""}
+      ${kartenKopf(`<div class="titel">${esc(a.Titel)}</div><div class="meta">${artZeichen(a)} · ${quelleLink(f, a, meta)}</div>`, "stand", m.stand || 0, id, m.sitzt || "")}
+      <p>${esc(a.Anweisung)}</p>${lueckeHinweis(a)}${m.weg ? `<p class="leise">Lasse ich weg.</p>` : ""}
       ${ikonLeiste(f, a, m, id, false)}${verschieben(v)}</div>`;
   }
   const o = eVt(v.VerteilungID), x = `data-id="${v.VerteilungID}"`;
@@ -382,6 +469,7 @@ function seiteTag(tag, istHeute) {
   const wt = (iso) => TAGE[(datum(iso).getDay() + 6) % 7];
   let h = "";
   const termine = (p.Termine || []).filter((t) => t.Datum && wt(t.Datum) === tag && t.Datum >= p.Woche.StartDatum && t.Datum <= p.Woche.EndDatum);
+  for (const f of p.Faecher) { const z = eFach(f.Fach).zeigTermin; if (z && z.tag === tag) termine.push({ Uhrzeit: z.uhr, FachID: f.Fach, PersonName: z.person, Ort: z.ort, Art: "Zeigen", Status: "selbst festgelegt" }); }
   if (termine.length) h += `<h2><span aria-hidden="true">📅</span> Termine</h2>` + termine.map((t) => `<div class="karte"><div class="titel">${t.Uhrzeit ? esc(t.Uhrzeit) + " Uhr · " : ""}${esc(t.FachID)}${t.PersonName ? " mit " + esc(t.PersonName) : ""}</div><div class="meta">${t.Ort ? esc(t.Ort) + " · " : ""}${esc(t.Art || "")}${t.Status ? " · " + esc(t.Status) : ""}</div></div>`).join("");
   // Der ganze Tag in zeitlicher Reihenfolge: jede Schulstunde laut Stundenplan, dazu Bahn und Termine.
   // Stunden ohne Stoff stehen klein da (teilnehmen, Pause, Weg, frei), damit Emil sieht, was dazwischen ist.
@@ -574,13 +662,55 @@ function uebenKarte(f, u, i, mitFach) {
   </div>`;
 }
 
-// Zeig-Termin: eingetragener Termin, sonst der Vorschlag aus der Stoffverteilung (lila), sonst offen
+// Datum eines Wochentags der geladenen Woche als ISO-Text
+const tagIso = (tag) => { const d = datum(paket().Woche.StartDatum); d.setDate(d.getDate() + TAGE.indexOf(tag)); return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); };
+// Ideen, wenn Emil zwei Fächer kombiniert: Das Thema des einen Fachs wird mit dem Können des anderen gezeigt
+function kombiIdeen(f, partner) {
+  const p = paket(), b = p.Faecher.find((x) => x.Fach === partner), tA = f.Thema || f.Fach, tB = (b && b.Thema) || partner;
+  const vorlagen = {
+    Englisch: [`Erkläre „${tA}“ auf Englisch in 2 Minuten. Benutze mindestens 5 englische Fachwörter.`, `Schreib einen kurzen englischen Text (ca. 100 Wörter) über „${tA}“.`],
+    Deutsch: [`Schreib einen Sachtext (ca. 150 Wörter) über „${tA}“. Achte auf Kommas und das/dass.`, `Schreib einen kurzen Kommentar: Was ist an „${tA}“ wichtig und warum?`],
+    Mathe: [`Mach aus „${tA}“ eine Rechenaufgabe mit Lösung und erkläre den Rechenweg.`, `Zeichne ein Diagramm mit Zahlen zu „${tA}“ und erkläre, was man daran sieht.`],
+    PoWi: [`Erkläre, was „${tA}“ für Gesellschaft oder Politik bedeutet, mit einem Beispiel aus den Nachrichten.`],
+    Biologie: [`Erkläre, wo „${tA}“ mit dem Körper oder der Natur zu tun hat („${tB}“).`],
+    Physik: [`Erkläre, was „${tA}“ mit Technik oder Physik zu tun hat („${tB}“).`],
+    Chemie: [`Erkläre, wo bei „${tA}“ Stoffe oder Reaktionen eine Rolle spielen („${tB}“).`],
+  };
+  return vorlagen[partner] || [`Verbinde „${tA}“ mit „${tB}“ und erkläre beides zusammen.`];
+}
+// Kombination, die ein anderes Fach mit diesem Fach angelegt hat und die auch hier zählt
+function kombiVon(fach) {
+  for (const f of paket().Faecher) { const e = eFach(f.Fach); if (f.Fach !== fach && e.zeig === "kombi" && e.kombiFach === fach && e.kombiBeide !== false && e.kombiIdee) return [f.Fach, e.kombiIdee]; }
+  return null;
+}
+const zeigIdeeText = (fach) => { const e = eFach(fach); if (e.zeig === "kombi" && e.kombiIdee) return `Kombi mit ${e.kombiFach}: ${e.kombiIdee}`; const k = kombiVon(fach); return k ? `Kombi mit ${k[0]}: ${k[1]}` : null; };
+// Zeig-Termin: selbst festgelegt, sonst eingetragener Termin, sonst der Vorschlag aus der Stoffverteilung (lila), sonst offen
 function zeigTermin(f) {
+  const eigen = eFach(f.Fach).zeigTermin;
+  if (eigen && eigen.tag) return `${esc(tagDatum(eigen.tag))}${eigen.uhr ? " " + esc(eigen.uhr) + " Uhr" : ""}${eigen.person ? " mit " + esc(eigen.person) : ""}${eigen.ort ? ", " + esc(eigen.ort) : ""} <span class="leise">(selbst festgelegt)</span>`;
   const t = f.Termin;
   if (t) return `${kurzDatum(t.Datum)} ${t.Uhrzeit ? esc(t.Uhrzeit) + " Uhr" : esc(t.Zeitraum || "")}${t.PersonName ? " mit " + esc(t.PersonName) : ""}${t.Ort ? ", " + esc(t.Ort) : ""}`;
   const z = verteilung().filter((v) => v.FachID === f.Fach && v.Art === "Zeigen").sort(sortVt)[0];
   if (z) return `<span class="${istVorschlag(z) ? "lila" : ""}">${esc(vtTag(z))} ${esc(fensterText(vtTag(z), vtFenster(z)))} · ${esc(z.Beschreibung || "")}</span>`;
   return "noch offen, am Sonntag festlegen";
+}
+function kombiFeld(f, e, x) {
+  const andere = paket().Faecher.filter((y) => y.Fach !== f.Fach).map((y) => [y.Fach, y.Fach + (y.Optional ? " (freiwillig)" : "")]);
+  let h = `<div class="aufklapp"><label>Mit welchem Fach?${auswahl("kombiFach", andere, e.kombiFach, "Fach wählen", x)}</label>`;
+  if (e.kombiFach) {
+    h += `<p class="leise">Ideen (antippen übernimmt sie):</p><div class="chips">` + kombiIdeen(f, e.kombiFach).map((t) => `<button class="chip lang" data-a="kombiIdee" data-w="${esc(t)}" ${x} aria-pressed="${e.kombiIdee === t}">${esc(t)}</button>`).join("") + `</div>
+      <label>Deine Idee (kannst du ändern)${text("kombiIdeeText", e.kombiIdee || "", "Was zeigst du?", x)}</label>
+      <label class="radio"><input type="checkbox" data-a="kombiBeide" ${x} ${e.kombiBeide !== false ? "checked" : ""}><span>Zählt auch als Zeigen für ${esc(e.kombiFach)}</span></label>`;
+  }
+  return h + `</div>`;
+}
+// Eigener Zeig-Termin: Tag dieser Woche, Uhrzeit, Person, Ort. Geht mit der Rückmeldung als Zeig-Termin in die Datenbank.
+function zeigTerminFeld(f, e, x) {
+  const t = e.zeigTermin || {}, orte = (paket().Lernorte || []).map((o) => [o.Bezeichnung, o.Bezeichnung]);
+  return `<p class="leise">Jetzt: ${zeigTermin(f)}</p>
+    <div class="zwei">${auswahl("zt-tag", TAGE.map((d) => [d, tagDatum(d)]), t.tag, "Tag", x)}<label class="ohne">${feld("zt-uhr", t.uhr || "", "Uhrzeit", x, "time")}</label></div>
+    <div class="zwei">${auswahl("zt-person", kontakte().map((k) => [k.PersonName, k.PersonName]), t.person, "mit wem?", x)}${auswahl("zt-ort", orte, t.ort, "wo?", x)}</div>
+    ${t.tag ? `<button class="link" data-a="zt-weg" ${x}>Termin wieder löschen</button>` : `<p class="leise">Fehlt die Person in der Liste? Unter Mehr › Meine Kontakte neu anlegen.</p>`}`;
 }
 function seiteFach() {
   const p = paket(), f = p && p.Faecher.find((x) => x.Fach === ansicht.fach);
@@ -602,6 +732,7 @@ function seiteFach() {
       ${e.einstufung === "sicher" ? `<p class="leise">Sicher heißt: Der Test hat es gezeigt, nicht das Gefühl. Dann darfst du unten Aufgaben weglassen.</p>` : ""}</div>`;
 
   h += `<h3>2 · Aufnehmen – das musst du diese Woche lernen</h3>` + (pflicht(f).map((a) => aufgabeKarte(f, a, false)).join("") || `<p class="leise">Im Plan steht hier nichts.</p>`);
+  h += vorziehenBereich(f);
 
   h += `<h3>3 · Üben – das legst du am Wochenanfang selbst fest</h3>
     <p class="leise">Geh die Seiten von oben durch: Was willst du üben, mit welchen Aufgaben auf welcher Seite, wie und wann?${f.UebungsMin ? ` Du hast dafür ${f.UebungsMin} Min. freie Übungszeit.` : ""}</p>` +
@@ -612,9 +743,13 @@ function seiteFach() {
   h += `<h3>4 · Zeigen</h3><div class="karte">` + ideen.map((v, i) => `<label class="radio"><input type="radio" name="zeig" data-a="zeig" data-w="${i}" ${x} ${String(e.zeig) === String(i) ? "checked" : ""}><span>${esc(v.Vorschlagstext)}${v.Zeigform ? ` <span class="leise">(${esc(v.Zeigform)})</span>` : ""}</span></label>`).join("") +
     `<label class="radio"><input type="radio" name="zeig" data-a="zeig" data-w="eigen" ${x} ${e.zeig === "eigen" ? "checked" : ""}><span>Eigene Idee</span></label>
      ${e.zeig === "eigen" ? feld("zeigEigen", e.zeigEigen || "", "Meine Idee", x) : ""}
+     <label class="radio"><input type="radio" name="zeig" data-a="zeig" data-w="kombi" ${x} ${e.zeig === "kombi" ? "checked" : ""}><span>Mit einem anderen Fach kombinieren</span></label>
+     ${e.zeig === "kombi" ? kombiFeld(f, e, x) : ""}
+     ${kombiVon(f.Fach) ? `<p class="hinweis">Zählt schon mit: Kombi mit ${esc(kombiVon(f.Fach)[0])}: ${esc(kombiVon(f.Fach)[1])}</p>` : ""}
      <div class="zeile"><span class="leise">Größe</span>${chips("groesse", [["klein", "klein"], ["mittel", "mittel"], ["groß", "groß"]], e.groesse, x)}</div>
      <label>Dafür lasse ich weg${feld("lasseWeg", e.lasseWeg || "", "zum Beispiel eine Übung", x)}</label>
-     <label>Dafür nehme ich dazu${feld("nehmeDazu", e.nehmeDazu || "", "zum Beispiel ein Video", x)}</label></div>`;
+     <label>Dafür nehme ich dazu${feld("nehmeDazu", e.nehmeDazu || "", "zum Beispiel ein Video", x)}</label></div>
+    <h3>Wann und mit wem zeigst du es?</h3><div class="karte">${zeigTerminFeld(f, e, x)}</div>`;
 
   const frei = freiwillig(f), songs = f.Songs.filter((s) => s.Empfohlen);
   if (frei.length || songs.length) {
@@ -682,8 +817,11 @@ function seiteMehr() {
       <li>${ikon("uhr", 26)}<span><strong>Arbeitszeit</strong> eintragen, wenn du magst: von–bis oder Dauer. Zeigt „geplant · gebraucht“.</span></li>
       <li>${ikon("mikro", 26)}<span><strong>Sprechen statt tippen</strong> bei Notizen. Der Text erscheint im Feld und du kannst ihn verbessern.</span></li>
       <li><span class="ampel ampel-gruen"><i></i>im Plan</span><span><strong>Ampel:</strong> grün im Plan, gelb 1–3 im Rückstand, rot mehr als 3, blau voraus.</span></li>
+      <li>${ikon("pfeil", 26)}<span><strong>Vorziehen:</strong> im Fach unter „Aus kommenden Wochen vorziehen“ eine Aufgabe in diese Woche holen.</span></li>
       <li>${ikon("mond", 26)}<span>Oben rechts: hell oder dunkel.</span></li>
     </ul>
+    <h3>Nachschlagen</h3><div class="zwei"><button class="knopf" data-a="seite" data-w="techniken">Lerntechniken</button><button class="knopf" data-a="seite" data-w="buecher">Bücher und Material</button></div>
+    ${seiteKontakte()}
     ${notizUebersicht()}
     ${gemeldeteLinks()}
     <h3>Daten</h3>
@@ -724,14 +862,14 @@ const ohnePaket = () => `<div class="karte"><div class="titel">Noch kein Wochenp
 // ---------------------------------------------------------------- Zeichnen
 const istDunkel = () => Z.theme === "dark" || (Z.theme !== "light" && !!window.matchMedia && matchMedia("(prefers-color-scheme: dark)").matches);
 const seiteTagAnsicht = () => (paket() ? `<button class="link" data-a="seite" data-w="woche">‹ Zur Woche</button>` + seiteTag(ansicht.tag, ansicht.tag === heuteTag()) : ohnePaket());
-const SEITEN = { heute: ["Heute", seiteHeute], woche: ["Woche", seiteWoche], fortschritt: ["Fortschritt", seiteFortschritt], sonntag: ["Sonntag", seiteSonntag], mehr: ["Mehr", seiteMehr], fach: ["Fach", seiteFach], tag: ["Tag", seiteTagAnsicht] };
+const SEITEN = { techniken: ["Lerntechniken", seiteTechniken], buecher: ["Bücher und Material", seiteBuecher], heute: ["Heute", seiteHeute], woche: ["Woche", seiteWoche], fortschritt: ["Fortschritt", seiteFortschritt], sonntag: ["Sonntag", seiteSonntag], mehr: ["Mehr", seiteMehr], fach: ["Fach", seiteFach], tag: ["Tag", seiteTagAnsicht] };
 function zeichnen(obenBleiben) {
   const y = window.scrollY, p = paket();
   document.documentElement.dataset.theme = Z.theme && Z.theme !== "system" ? Z.theme : "";
   if (!document.documentElement.dataset.theme) delete document.documentElement.dataset.theme;
   document.getElementById("kopf").innerHTML = `<button class="thema" data-a="theme-wechsel" aria-label="${istDunkel() ? "Hell" : "Dunkel"} darstellen">${ikon(istDunkel() ? "sonne" : "mond", 22)}</button><h1>${ansicht.seite === "fach" ? esc(ansicht.fach) : ansicht.seite === "tag" ? esc(tagDatum(ansicht.tag)) : SEITEN[ansicht.seite][0]}</h1><p>${p ? `${esc(p.Plan.Lernende)} · ${esc(p.Woche.WocheID)} · ${kurzDatum(p.Woche.StartDatum)} bis ${kurzDatum(p.Woche.EndDatum)}${p.Umgebung !== "Produktion" ? " · " + esc(p.Umgebung.toUpperCase()) : ""}` : "Schulplaner"}</p>`;
   document.getElementById("inhalt").innerHTML = SEITEN[ansicht.seite][1]();
-  document.getElementById("nav").innerHTML = ["heute", "woche", "fortschritt", "sonntag", "mehr"].map((s) => `<button data-a="seite" data-w="${s}" ${ansicht.seite === s || (s === "woche" && (ansicht.seite === "fach" || ansicht.seite === "tag")) ? 'aria-current="page"' : ""}>${SEITEN[s][0]}</button>`).join("");
+  document.getElementById("nav").innerHTML = ["heute", "woche", "fortschritt", "sonntag", "mehr"].map((s) => `<button data-a="seite" data-w="${s}" ${ansicht.seite === s || (s === "woche" && (ansicht.seite === "fach" || ansicht.seite === "tag")) || (s === "mehr" && (ansicht.seite === "techniken" || ansicht.seite === "buecher")) ? 'aria-current="page"' : ""}>${SEITEN[s][0]}</button>`).join("");
   window.scrollTo(0, obenBleiben ? y : 0);
 }
 
@@ -818,6 +956,23 @@ function handle(el, wert) {
     case "vorhersage": case "ergebnis": case "max": eFach(d.fach)[a] = zahl(wert); neu = false; break;
     case "einstufung": case "groesse": eFach(d.fach)[a] = eFach(d.fach)[a] === wert ? null : wert; break;
     case "zeig": eFach(d.fach).zeig = wert; break;
+    case "kombiFach": eFach(d.fach).kombiFach = wert || null; eFach(d.fach).kombiIdee = null; break;
+    case "kombiIdee": eFach(d.fach).kombiIdee = wert; break;
+    case "kombiIdeeText": eFach(d.fach).kombiIdee = wert; neu = false; break;
+    case "kombiBeide": eFach(d.fach).kombiBeide = el.checked; break;
+    case "zt-tag": case "zt-uhr": case "zt-person": case "zt-ort": { const e = eFach(d.fach); e.zeigTermin = Object.assign(e.zeigTermin || {}, { [a.slice(3)]: wert || null }); break; }
+    case "zt-weg": delete eFach(d.fach).zeigTermin; break;
+    case "vorziehen": vorgezogen()[wert] = true; break;
+    case "zurueck-legen": vorgezogen()[wert] = false; break;
+    case "tech-kat": ansicht.techKat = wert; zeichnen(false); return;
+    case "technik": ansicht.technik = ansicht.technik === wert ? null : wert; zeichnen(true); return;
+    case "technik-seite": ansicht = { seite: "techniken", fach: null, technik: wert }; zeichnen(false); setTimeout(() => { const k = [...document.querySelectorAll("[data-a=technik]")].find((x) => x.dataset.w === wert); if (k) k.closest(".karte").scrollIntoView(); }, 0); return;
+    case "buch": ansicht = { seite: "buecher", fach: null, buchFach: wert, buchQ: d.q }; zeichnen(false); setTimeout(() => { const t = document.querySelector(".karte.treffer"); if (t) t.scrollIntoView(); }, 0); return;
+    case "buch-fach": ansicht.buchFach = wert; ansicht.buchQ = null; zeichnen(false); return;
+    case "springe": Z.woche = wert; speichern(); ansicht = { seite: "fach", fach: d.fach }; zeichnen(false); return;
+    case "k-auf": ansicht.kontakt = ansicht.kontakt === wert ? null : wert; zeichnen(true); return;
+    case "k-neu": { const n = (prompt("Name der Person (zum Beispiel Tante Anna):") || "").trim(); if (!n) return; if (!Z.kontakte) Z.kontakte = {}; Z.kontakte[n] = Object.assign({ neu: true }, Z.kontakte[n] || {}); ansicht.kontakt = n; break; }
+    case "k-feld": { if (!Z.kontakte) Z.kontakte = {}; const k = Z.kontakte[d.name] || (Z.kontakte[d.name] = {}); k[d.feld] = el.type === "checkbox" ? el.checked : (wert || null); neu = el.type === "checkbox" || el.tagName === "SELECT"; break; }
     case "zeigEigen": case "lasseWeg": case "nehmeDazu": case "notiz": eFach(d.fach)[a] = wert; if (a === "notiz" && d.gesprochen) eFach(d.fach).notizGesprochen = true; neu = false; break;
     case "u-neu": eFach(d.fach).ueben.push({ was: "", wie: "", tag: "", stand: 0 }); break;
     case "u-weg": eFach(d.fach).ueben.splice(Number(d.i), 1); break;
@@ -862,11 +1017,28 @@ async function dateienLesen(dateien) {
   for (const d of dateien) {
     try { meldungen.push(paketAufnehmen(JSON.parse((await d.text()).replace(/^﻿/, "")))); } catch (e) { meldungen.push(`${d.name}: ${e.message}`); }
   }
+  if (wocheHeute()) Z.woche = wocheHeute();            // die Woche, in der heute liegt, bleibt vorn
   speichern(); ansicht = { seite: "woche", fach: null }; zeichnen(false);
   if (meldungen.length) alert(meldungen.join("\n"));
 }
 function rueckmeldung() {
   const p = paket(), e = eintraege();
+  const r = rueckmeldungBasis(p, e);
+  // vorgezogene Aufgaben stehen nicht in p.Faecher[].Aufgaben, sondern in p.Kommend
+  for (const k of p.Kommend || []) {
+    const v = (e.vorgezogen || {})[k.MaterialID];
+    if (v === undefined) continue;
+    const m = e.mat[k.MaterialID] || {};
+    r.Material = r.Material.filter((x) => x.MaterialID !== k.MaterialID);
+    r.Material.push({ MaterialID: k.MaterialID, FortschrittProzent: (m.stand || 0) * 25, Tag: m.tag || null, Zeitraum: ZEITEN[m.zeit] || null, Entscheidung: m.weg ? "gestrichen" : "bleibt",
+      Einschaetzung: m.sitzt || null, Notiz: m.notiz || null, NotizArt: m.notizArt || null, NotizGesprochen: !!m.notizGesprochen, MinutenIst: summeZeit(m) || null,
+      LinkMeldung: m.meldung ? { Grund: m.meldung.grund, Text: m.meldung.text || null, Am: m.meldung.am } : null,
+      Hilfe: (m.hilfe || []).map((x) => ({ Person: x.person, Weg: x.weg, Am: x.am, Ergebnis: x.ergebnis, Termin: x.termin })), Vorgezogen: v === true });
+  }
+  delete r.Vorgezogen;
+  return r;
+}
+function rueckmeldungBasis(p, e) {
   return {
     Art: "Rueckmeldung", AppVersion: APP_VERSION, Erstellt: new Date().toISOString(), PlanID: p.Plan.PlanID, Lernende: p.Plan.Lernende, Woche: p.Woche.WocheID,
     Material: p.Faecher.flatMap((f) => f.Aufgaben.map((a) => ({ a, m: e.mat[a.MaterialID], frei: (e.fach[f.Fach] || {}).frei })).filter((x) => (x.m && (x.m.stand || x.m.tag || x.m.weg || x.m.sitzt || x.m.notiz || x.m.meldung || (x.m.hilfe && x.m.hilfe.length) || summeZeit(x.m))) || (x.frei && x.frei[x.a.MaterialID])).map((x) => ({
@@ -875,12 +1047,15 @@ function rueckmeldung() {
       MinutenIst: x.m && summeZeit(x.m) ? summeZeit(x.m) : null,
       LinkMeldung: x.m && x.m.meldung ? { Grund: x.m.meldung.grund, Text: x.m.meldung.text || null, Am: x.m.meldung.am } : null,
       Hilfe: ((x.m && x.m.hilfe) || []).map((v) => ({ Person: v.person, Weg: v.weg, Am: v.am, Ergebnis: v.ergebnis, Termin: v.termin })) }))),
+    Vorgezogen: null,
     TagNotizen: Object.entries(e.tage || {}).filter(([, v]) => v.notiz).map(([t, v]) => ({ Tag: t, Notiz: v.notiz, Art: v.art || null, Gesprochen: !!v.gesprochen })),
+    Kontakte: Object.entries(Z.kontakte || {}).map(([n, k]) => Object.assign({ PersonName: n }, Object.fromEntries(KONTAKT_FELDER.map((f) => [f, k[f] ?? null])))),
     WochenNotiz: e.wocheNotiz ? { Notiz: e.wocheNotiz, Art: e.wocheNotizArt || null, Gesprochen: !!e.wocheNotizGesprochen } : null,
     Faecher: p.Faecher.map((f) => {
       const x = e.fach[f.Fach] || { ueben: [] }, ideen = vorschlaege(f, "Zeigen");
       return { Fach: f.Fach, Paket: f.Paket, Vorhersage: x.vorhersage ?? null, Ergebnis: x.ergebnis ?? null, Maximal: x.max ?? null, StartCheck: x.einstufung || null,
-        ZeigIdee: x.zeig === "eigen" ? x.zeigEigen || "eigene Idee" : (ideen[x.zeig] ? ideen[x.zeig].Vorschlagstext : null), Zeigform: x.zeig !== "eigen" && ideen[x.zeig] ? ideen[x.zeig].Zeigform : null,
+        ZeigIdee: x.zeig === "eigen" ? x.zeigEigen || "eigene Idee" : (ideen[x.zeig] ? ideen[x.zeig].Vorschlagstext : zeigIdeeText(f.Fach)), Zeigform: x.zeig !== "eigen" && ideen[x.zeig] ? ideen[x.zeig].Zeigform : null,
+        ZeigTermin: x.zeigTermin && x.zeigTermin.tag ? { Datum: tagIso(x.zeigTermin.tag), Uhrzeit: x.zeigTermin.uhr || null, Person: x.zeigTermin.person || null, Ort: x.zeigTermin.ort || null, Kombi: x.zeig === "kombi" ? x.kombiFach || null : null } : null,
         Groesse: x.groesse || null, LasseWeg: x.lasseWeg || null, NehmeDazu: x.nehmeDazu || null, Notiz: x.notiz || null, NotizArt: x.notizArt || null, NotizGesprochen: !!x.notizGesprochen,
         Ueben: (x.ueben || []).map((u) => ({ Was: u.was, Wie: u.wie, Tag: u.tag, FortschrittProzent: (u.stand || 0) * 25 })) };
     }),
@@ -905,6 +1080,9 @@ async function abgeben(name, obj) {
 
 // ---------------------------------------------------------------- Start
 window.schulplaner = { paketAufnehmen, rueckmeldung, zustand: () => Z, neuZeichnen: () => { speichern(); zeichnen(false); } };
+// Beim Öffnen die Woche zeigen, in der heute liegt (sonst die zuletzt gewählte)
+function wocheHeute() { const h = heuteIso(); return Object.keys(Z.pakete).find((w) => Z.pakete[w].Woche.StartDatum <= h && h <= Z.pakete[w].Woche.EndDatum) || null; }
+if (wocheHeute()) Z.woche = wocheHeute();
 if (!paket() && Object.keys(Z.pakete).length) Z.woche = Object.keys(Z.pakete).sort()[0];
 if (!paket()) ansicht.seite = "mehr";
 zeichnen(false);

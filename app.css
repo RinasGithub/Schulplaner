@@ -153,3 +153,27 @@ details.offen summary { cursor: pointer; }
 .filter { margin-bottom: 6px; grid-template-columns: 1fr 1fr; }
 .aufklapp input[type="time"] { width: 100%; min-height: 44px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--linie); background: var(--feld); color: var(--text); font: inherit; }
 .hinweis.sichern { border-left-color: var(--akzent); }
+/* 0.9.0: Kontakte, eigener Zeig-Termin, Fächer kombinieren */
+.chip.lang { text-align: left; border-radius: 12px; justify-content: flex-start; }
+label.ohne { margin-top: 0; }
+input[type="time"], input[type="tel"], input[type="email"] { width: 100%; min-height: 44px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--linie); background: var(--feld); color: var(--text); font: inherit; }
+.liste .aufklapp { margin-top: 8px; }
+/* 0.10.0: Lerntechniken, Bücher, Vorziehen, Hinweis bei Lücken, Ansicht am PC */
+button.quelle { background: none; border: 0; padding: 0; font: inherit; color: var(--akzent); text-decoration: underline; cursor: pointer; }
+.luecke { font-size: 13.5px; color: var(--warn); background: var(--chip); border-radius: 8px; padding: 6px 10px; }
+details.kommend { margin: 10px 0; } details.kommend summary { color: var(--akzent); cursor: pointer; min-height: 40px; padding-top: 8px; font-weight: 600; }
+.karte.klein { padding: 8px 12px; }
+.karte.treffer { box-shadow: 0 0 0 3px var(--gelb); }
+.status-buch { flex: none; font-size: 12.5px; padding: 3px 10px; border-radius: 12px; border: 1px solid var(--linie); }
+.status-buch.gut { color: var(--gut); border-color: var(--gut); } .status-buch.bald { color: var(--warn); border-color: var(--warn); } .status-buch.offen { color: var(--leise); }
+.chip.stumm { opacity: .7; }
+@media (min-width: 1000px) {
+  body { padding-bottom: 0; padding-left: 210px; }
+  header { padding-left: 24px; }
+  nav { top: 0; bottom: 0; right: auto; width: 210px; flex-direction: column; border-top: 0; border-right: 1px solid var(--linie); padding: 76px 0 0; z-index: 4; }
+  nav button { flex: none; min-height: 52px; text-align: left; padding: 0 24px; font-size: 15px; }
+  nav button[aria-current="page"] { box-shadow: inset 4px 0 0 var(--akzent); }
+  main { max-width: 1180px; display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; align-items: start; padding: 16px 28px 32px; }
+  main > :not(.karte) { grid-column: 1 / -1; }
+  main > .karte { margin: 8px 0; }
+}
